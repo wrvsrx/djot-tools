@@ -1,14 +1,67 @@
-use std::ffi::CStr;
-use std::fmt::Debug;
+use std::cell::Cell;
 
-use tree_sitter::{ffi::ts_node_string, InputEdit, Parser};
+use tokio;
+use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::*;
+use tower_lsp::{Client, LanguageServer, LspService, Server};
+use tree_sitter::Parser;
 
-fn main() {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_djot::language())
-        .expect("Error loading djot grammer");
-    let source_code = "_This is regular_ not strong emphasis\n*strong*\n";
-    let mut tree = parser.parse(source_code, None).unwrap();
-    println!("{}", tree.root_node().to_sexp());
+#[derive(Debug)]
+struct Backend {
+    client: Client,
+    parser: Cell<Parser>
+}
+
+#[tower_lsp::async_trait]
+impl LanguageServer for Backend {
+    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        Ok(InitializeResult {
+            capabilities: ServerCapabilities {
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                completion_provider: Some(CompletionOptions::default()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    async fn initialized(&self, _: InitializedParams) {
+        self.client
+            .log_message(MessageType::INFO, "server initialized!")
+            .await;
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
+        Ok(Some(CompletionResponse::Array(vec![
+            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
+            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
+        ])))
+    }
+
+    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
+        Ok(Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String("You're hovering!".to_string())),
+            range: None,
+        }))
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    // let mut parser = Parser::new();
+    // parser
+    //     .set_language(&tree_sitter_djot::language())
+    //     .expect("Error loading djot grammer");
+    // let source_code = "_This is regular_ not strong emphasis\n*strong*\n";
+    // let mut tree = parser.parse(source_code, None).unwrap();
+    // println!("{}", tree.root_node().to_sexp());
+    let stdin = tokio::io::stdin();
+    let stdout = tokio::io::stdout();
+
+    let (service, socket) = LspService::new(|client| Backend { client });
+    Server::new(stdin, stdout, socket).serve(service).await;
 }
