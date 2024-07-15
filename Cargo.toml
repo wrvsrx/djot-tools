@@ -1,0 +1,11 @@
+[package]
+name = "djot-language-server-rust"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+cc = "*"
+
+[dependencies]
+tree-sitter = "0.22.6"
+tree-sitter-djot = { git = "https://github.com/treeman/tree-sitter-djot", version = "0.0.1" }
