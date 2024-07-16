@@ -1,5 +1,5 @@
 use super::utils;
-use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
+use tower_lsp::lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
 
 fn render_heading(text: &str) -> String {
     text.lines()
@@ -58,5 +58,160 @@ pub fn find_document_heading(
         )
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn document_symbol() {
+        let source_code = "# Heading
+
+something
+
+## nest heading
+
+content
+
+# Heading 2
+    continue
+
+114514
+
+# Heading 3
+#    continue
+";
+        let text = ropey::Rope::from_str(&source_code);
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_djot::language())
+            .expect("Error loading djot grammer");
+        let tree = parser.parse(&source_code, None).unwrap();
+        let mut cursor = tree.root_node().walk();
+        let symbols = tree
+            .root_node()
+            .children(&mut cursor)
+            .filter_map(|child| find_document_heading(child, &text))
+            .collect::<Vec<_>>();
+        println!("{:?}", symbols);
+        let a = [
+            #[allow(deprecated)]
+            DocumentSymbol {
+                name: "Heading".to_string(),
+                detail: None,
+                kind: SymbolKind::NAMESPACE,
+                tags: None,
+                deprecated: None,
+                range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                },
+                selection_range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 0,
+                    },
+                },
+                children: Some(vec![DocumentSymbol {
+                    name: "nest heading".to_string(),
+                    detail: None,
+                    kind: SymbolKind::NAMESPACE,
+                    tags: None,
+                    deprecated: None,
+                    range: Range {
+                        start: Position {
+                            line: 4,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 8,
+                            character: 0,
+                        },
+                    },
+                    selection_range: Range {
+                        start: Position {
+                            line: 4,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 5,
+                            character: 0,
+                        },
+                    },
+                    children: None,
+                }]),
+            },
+            #[allow(deprecated)]
+            DocumentSymbol {
+                name: "Heading 2 continue".to_string(),
+                detail: None,
+                kind: SymbolKind::NAMESPACE,
+                tags: None,
+                deprecated: None,
+                range: Range {
+                    start: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 13,
+                        character: 0,
+                    },
+                },
+                selection_range: Range {
+                    start: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 10,
+                        character: 0,
+                    },
+                },
+                children: None,
+            },
+            #[allow(deprecated)]
+            DocumentSymbol {
+                name: "Heading 3 continue".to_string(),
+                detail: None,
+                kind: SymbolKind::NAMESPACE,
+                tags: None,
+                deprecated: None,
+                range: Range {
+                    start: Position {
+                        line: 13,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 15,
+                        character: 0,
+                    },
+                },
+                selection_range: Range {
+                    start: Position {
+                        line: 13,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 15,
+                        character: 0,
+                    },
+                },
+                children: None,
+            },
+        ];
+        assert_eq!(symbols, a);
     }
 }

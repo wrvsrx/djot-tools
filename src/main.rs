@@ -122,23 +122,6 @@ impl LanguageServer for Backend {
 
 #[tokio::main]
 async fn main() {
-    // let mut parser = Parser::new();
-    // parser
-    //     .set_language(&tree_sitter_djot::language())
-    //     .expect("Error loading djot grammer");
-    // let source_code = std::fs::read_to_string("a.dj").unwrap();
-    // // "# Heading\n\nsomethind\n\n## Heading ne\n\n114514\n\n# Heading 2\n\n114514\n";
-    // let rope = Rope::from_str(&source_code);
-    // let tree = parser.parse(source_code, None).unwrap();
-    // println!("{}", tree.root_node().to_sexp());
-    // let mut cursor = tree.root_node().walk();
-    // let hs: Vec<DocumentSymbol> = tree
-    //     .root_node()
-    //     .children(&mut cursor)
-    //     .filter_map(|child| find_document_heading(child, &rope))
-    //     .collect();
-    // println!("{:?}", hs);
-    // std::process::exit(0);
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
