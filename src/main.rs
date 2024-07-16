@@ -189,7 +189,7 @@ async fn main() {
     // parser
     //     .set_language(&tree_sitter_djot::language())
     //     .expect("Error loading djot grammer");
-    // let source_code = fs::read_to_string("a.dj").unwrap();
+    // let source_code = std::fs::read_to_string("a.dj").unwrap();
     // // "# Heading\n\nsomethind\n\n## Heading ne\n\n114514\n\n# Heading 2\n\n114514\n";
     // let rope = Rope::from_str(&source_code);
     // let tree = parser.parse(source_code, None).unwrap();
@@ -203,9 +203,9 @@ async fn main() {
     // println!("{:?}", hs);
     // let s = rope.to_string();
     // let events = jotdown::Parser::new(&s);
-    // let s: Vec<Event> = events.collect();
+    // let s: Vec<jotdown::Event> = events.collect();
     // println!("{:?}", s);
-    // exit(0);
+    // std::process::exit(0);
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
