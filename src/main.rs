@@ -1,7 +1,9 @@
+use std::borrow::Borrow;
 use std::fs;
 use std::process::exit;
 
 use dashmap::DashMap;
+use jotdown::Event;
 use ropey::Rope;
 use tokio;
 use tower_lsp::jsonrpc::Result;
@@ -120,29 +122,50 @@ impl LanguageServer for Backend {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Sections {
-    heading: String,
-    childern: Vec<Sections>,
-}
-
 fn find_document_heading(node: Node, text: &Rope) -> Option<DocumentSymbol> {
     if node.kind() == "section" {
         let first_child = node.child(0).unwrap();
-        // check if first_child.kind()'s prefix is "heading", dump the code
+
+        // check if first_child.kind()'s prefix is "heading"
         assert!(first_child.kind().starts_with("heading"));
         assert_eq!(first_child.child(0).unwrap().kind(), "marker");
-        let range = first_child.child(1).unwrap().range();
-        let heading = text
+
+        let range = first_child.range();
+        let heading_str = text
             .slice(text.byte_to_char(range.start_byte)..(text.byte_to_char(range.end_byte) - 1))
             .to_string();
+        let heading_events: Vec<jotdown::Event> = jotdown::Parser::new(&heading_str).collect();
+
+        assert!(heading_events.len() >= 4);
+        assert!(matches!(heading_events[0], jotdown::Event::Start { .. }));
+        assert!(matches!(heading_events[1], jotdown::Event::Start { .. }));
+        assert!(matches!(
+            heading_events[heading_events.len() - 1],
+            jotdown::Event::End { .. }
+        ));
+        assert!(matches!(
+            heading_events[heading_events.len() - 2],
+            jotdown::Event::End { .. }
+        ));
+
+        let heading_str = heading_events[2..(heading_events.len() - 2)]
+            .iter()
+            .filter_map(|e| -> Option<&str> {
+                match e {
+                    jotdown::Event::Str(s) => Some(s.borrow()),
+                    jotdown::Event::Softbreak => Some(" "),
+                    _ => None,
+                }
+            }).collect();
+
         let mut cursor = node.walk();
-        let a: Vec<DocumentSymbol> = node
-            .child(1)
-            .unwrap()
-            .children(&mut cursor)
-            .filter_map(|child| find_document_heading(child, &text))
-            .collect();
+        let b: Vec<DocumentSymbol> = match node.child(1) {
+            Some(c) => c
+                .children(&mut cursor)
+                .filter_map(|child| find_document_heading(child, &text))
+                .collect(),
+            None => vec![],
+        };
         let r2r = |range: tree_sitter::Range| -> Range {
             return Range {
                 start: Position {
@@ -156,14 +179,14 @@ fn find_document_heading(node: Node, text: &Rope) -> Option<DocumentSymbol> {
             };
         };
         Some(DocumentSymbol {
-            name: heading,
+            name: heading_str,
             detail: None,
             kind: SymbolKind::NAMESPACE,
             tags: None,
             deprecated: None,
             range: r2r(node.range()),
             selection_range: r2r(first_child.range()),
-            children: if a.len() > 0 { Some(a) } else { None },
+            children: if b.len() > 0 { Some(b) } else { None },
         })
     } else {
         None
@@ -176,7 +199,7 @@ async fn main() {
     // parser
     //     .set_language(&tree_sitter_djot::language())
     //     .expect("Error loading djot grammer");
-    // let source_code = fs::read_to_string("b.dj").unwrap();
+    // let source_code = fs::read_to_string("a.dj").unwrap();
     // // "# Heading\n\nsomethind\n\n## Heading ne\n\n114514\n\n# Heading 2\n\n114514\n";
     // let rope = Rope::from_str(&source_code);
     // let tree = parser.parse(source_code, None).unwrap();
@@ -188,6 +211,10 @@ async fn main() {
     //     .filter_map(|child| find_document_heading(child, &rope))
     //     .collect();
     // println!("{:?}", hs);
+    // let s = rope.to_string();
+    // let events = jotdown::Parser::new(&s);
+    // let s: Vec<Event> = events.collect();
+    // println!("{:?}", s);
     // exit(0);
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
