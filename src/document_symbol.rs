@@ -1,5 +1,5 @@
 use super::utils;
-use tower_lsp::lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
+use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
 
 fn render_heading(text: &str) -> String {
     text.lines()
@@ -64,6 +64,7 @@ pub fn find_document_heading(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tower_lsp::lsp_types::*;
 
     #[test]
     fn document_symbol() {
