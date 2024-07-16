@@ -1,6 +1,22 @@
-use std::borrow::Borrow;
-use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
 use super::utils;
+use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
+
+fn render_heading(text: &str) -> String {
+    text.lines()
+        .map(|s| {
+            let mut i = 0;
+            for c in s.chars() {
+                if c == '#' || c == ' ' {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            &s[i..]
+        })
+        .collect::<Vec<&str>>()
+        .join(" ")
+}
 
 pub fn find_document_heading(
     node: tree_sitter::Node,
@@ -17,30 +33,7 @@ pub fn find_document_heading(
         let heading_str = text
             .slice(text.byte_to_char(range.start_byte)..(text.byte_to_char(range.end_byte) - 1))
             .to_string();
-        let heading_events: Vec<jotdown::Event> = jotdown::Parser::new(&heading_str).collect();
-
-        assert!(heading_events.len() >= 4);
-        assert!(matches!(heading_events[0], jotdown::Event::Start { .. }));
-        assert!(matches!(heading_events[1], jotdown::Event::Start { .. }));
-        assert!(matches!(
-            heading_events[heading_events.len() - 1],
-            jotdown::Event::End { .. }
-        ));
-        assert!(matches!(
-            heading_events[heading_events.len() - 2],
-            jotdown::Event::End { .. }
-        ));
-
-        let heading_str = heading_events[2..(heading_events.len() - 2)]
-            .iter()
-            .filter_map(|e| -> Option<&str> {
-                match e {
-                    jotdown::Event::Str(s) => Some(s.borrow()),
-                    jotdown::Event::Softbreak => Some(" "),
-                    _ => None,
-                }
-            })
-            .collect();
+        let heading_str = render_heading(&heading_str);
 
         let mut cursor = node.walk();
         let b: Vec<DocumentSymbol> = match node.child(1) {

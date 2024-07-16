@@ -138,10 +138,6 @@ async fn main() {
     //     .filter_map(|child| find_document_heading(child, &rope))
     //     .collect();
     // println!("{:?}", hs);
-    // let s = rope.to_string();
-    // let events = jotdown::Parser::new(&s);
-    // let s: Vec<jotdown::Event> = events.collect();
-    // println!("{:?}", s);
     // std::process::exit(0);
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
