@@ -1,16 +1,7 @@
-[package]
-name = "djot-language-server-rust"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[build-dependencies]
-cc = "*"
+resolver = "2"
 
-[dependencies]
-dashmap = "6.0.1"
-ropey = "1.6.1"
-tokio = {version = "1.38.0", features = ["full"]}
-tower-lsp = "0.20.0"
-tree-sitter = "0.22.6"
-tree-sitter-djot = { git = "https://github.com/treeman/tree-sitter-djot", version = "0.0.1" }
-uri = "0.4.0"
+members = [
+    "djot-language-server", "tree-sitter-djot",
+]
