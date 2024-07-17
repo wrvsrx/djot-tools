@@ -11,7 +11,12 @@
 
 // The different tokens the external scanner support
 // See `externals` in `grammar.js` for a description of most of them.
-enum TokenType { BLANKLINE, SOFTBREAK, PARAGRAPH_END };
+enum TokenType {
+  BLANKLINE,
+  PARAGRAPH_START,
+  PARAGRAPH_END,
+  SOFTBREAK,
+};
 
 void *tree_sitter_djot_external_scanner_create(void) { return NULL; }
 
@@ -35,9 +40,13 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
   // consider two case, start from line beginning or not
   // from begining of a line
   // - blankline
+  // - paragraph_start
   // not from begining of a line
   // - softbreak
   // - paragraph_end
+  if (lexer->eof(lexer)) {
+      return false;
+  }
 
   if (lexer->get_column(lexer) == 0) {
     // jump over leading spaces, treat them as ignored
@@ -52,6 +61,10 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
         lexer->result_symbol = BLANKLINE;
         return true;
       }
+    }
+    if (valid_symbols[PARAGRAPH_START]) {
+      lexer->result_symbol = PARAGRAPH_START;
+      return true;
     }
   } else {
     if (valid_symbols[SOFTBREAK] || valid_symbols[PARAGRAPH_END]) {
