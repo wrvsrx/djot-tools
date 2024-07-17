@@ -3,5 +3,5 @@
 resolver = "2"
 
 members = [
-    "djot-language-server", "tree-sitter-djot",
+    "crates/djot-language-server", "crates/tree-sitter-djot",
 ]
