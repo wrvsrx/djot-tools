@@ -1,1 +1,11 @@
-{ mkShell, cargo }: mkShell { nativeBuildInputs = [ cargo ]; }
+{
+  mkShell,
+  cargo,
+  nodejs,
+}:
+mkShell {
+  nativeBuildInputs = [
+    cargo
+    nodejs
+  ];
+}

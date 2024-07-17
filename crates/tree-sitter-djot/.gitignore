@@ -1,0 +1,16 @@
+/build
+/target
+/node_modules
+/.gitattributes
+/.editorconfig
+/Makefile
+/Package.swift
+/bindings/
+/pyproject.toml
+/setup.py
+/src/grammar.json
+/src/node-types.json
+/src/parser.c
+/src/tree_sitter/
+/Cargo.toml
+/binding.gyp

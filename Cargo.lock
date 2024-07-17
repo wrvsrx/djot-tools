@@ -142,7 +142,7 @@ dependencies = [
  "tokio",
  "tower-lsp",
  "tree-sitter",
- "tree-sitter-djot 0.0.1",
+ "tree-sitter-djot",
  "uri",
 ]
 
@@ -752,15 +752,10 @@ dependencies = [
 [[package]]
 name = "tree-sitter-djot"
 version = "0.0.1"
-source = "git+https://github.com/treeman/tree-sitter-djot#87bf82874c86dcf563f5521069d603ed50e5f0cc"
 dependencies = [
  "cc",
  "tree-sitter",
 ]
-
-[[package]]
-name = "tree-sitter-djot"
-version = "0.1.0"
 
 [[package]]
 name = "unicode-bidi"
