@@ -12,8 +12,8 @@ module.exports = grammar({
 
     paragraph: ($) => seq($.paragraph_start, repeat1($.inline), $.paragraph_end),
     inline: ($) => choice($.str, $.softbreak),
-    str: ($) => /.+/,
-    paragraph_end: ($) => /\n/,
+    str: (_) => /.+/,
+    paragraph_end: (_) => /\n/,
   },
 
   externals: ($) => [
