@@ -44,10 +44,12 @@ typedef Array(struct BlockLike) BlockLikeStack;
 // 2. optional(starting_marker)
 // 3. optional(ignored after starting_marker)
 // 3. remaining
+// TODO: we might neeed to emit multiple _block_like_start or starting_marker,
+// how to deal with that?
 enum LineParsingState {
-  NOT_PARSING_BLOCK_LIKE_START,
-  NOT_PARSING_STARTING_MARKER,
-  NOT_PARSING_IGNORED_AFTER_STARTING_MARKER,
+  PARSING_BLOCK_LIKE_START,
+  PARSING_STARTING_MARKER,
+  PARSING_IGNORED_AFTER_STARTING_MARKER,
   OTHERWISE,
 };
 
@@ -62,7 +64,7 @@ struct ScannerState {
 
 void init(struct ScannerState *s) {
   array_init(&(s->block_like_stack));
-  s->line_parsing_state = NOT_PARSING_BLOCK_LIKE_START;
+  s->line_parsing_state = PARSING_BLOCK_LIKE_START;
 }
 void *tree_sitter_djot_external_scanner_create(void) {
   struct ScannerState *s = ts_malloc(sizeof(struct ScannerState));
@@ -179,13 +181,13 @@ static uint8_t count_heading_level(TSLexer *lexer) {
   return heading_level;
 }
 
-static bool parse_eol(struct ScannerState *s, TSLexer *lexer,
-                      const bool *valid_symbols) {
+static bool parse_eol_or_block_like_end(struct ScannerState *s, TSLexer *lexer,
+                                        const bool *valid_symbols) {
   // if it's eol
   // we must accpet that since we always parse eol manually
   lexer->advance(lexer, false);
   lexer->mark_end(lexer);
-  s->line_parsing_state = NOT_PARSING_BLOCK_LIKE_START;
+  s->line_parsing_state = PARSING_BLOCK_LIKE_START;
 #ifdef TREE_SITTER_DEBUG
   printf("--- state from OTHERWISE to START_PARSING_IGNORED\n");
 #endif
@@ -302,16 +304,16 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
     return false;
   }
 
-  if (s->line_parsing_state == NOT_PARSING_BLOCK_LIKE_START) {
+  if (s->line_parsing_state == PARSING_BLOCK_LIKE_START) {
     assert(parse_block_like_start(s, lexer, valid_symbols));
-    s->line_parsing_state = NOT_PARSING_STARTING_MARKER;
+    s->line_parsing_state = PARSING_STARTING_MARKER;
     return true;
-  } else if (s->line_parsing_state == NOT_PARSING_STARTING_MARKER) {
+  } else if (s->line_parsing_state == PARSING_STARTING_MARKER) {
     assert(parse_starting_maker(s, lexer, valid_symbols));
-    s->line_parsing_state = NOT_PARSING_IGNORED_AFTER_STARTING_MARKER;
+    s->line_parsing_state = PARSING_IGNORED_AFTER_STARTING_MARKER;
     return true;
   } else if (s->line_parsing_state ==
-             NOT_PARSING_IGNORED_AFTER_STARTING_MARKER) {
+             PARSING_IGNORED_AFTER_STARTING_MARKER) {
     consume_whitespace(lexer);
     assert(valid_symbols[IGNORED]);
     lexer->result_symbol = IGNORED;
@@ -320,7 +322,7 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
   } else if (s->line_parsing_state == OTHERWISE) {
     if (lexer->lookahead == '\n') {
       // if it isn't start or start has been parsed
-      assert(parse_eol(s, lexer, valid_symbols));
+      assert(parse_eol_or_block_like_end(s, lexer, valid_symbols));
       return true;
     }
   } else {
