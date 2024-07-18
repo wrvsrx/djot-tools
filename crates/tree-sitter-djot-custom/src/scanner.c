@@ -14,6 +14,7 @@
 enum TokenType {
   BLOCK_LIKE_START,
   BLOCK_LIKE_END,
+  HEADING_MARKER,
   SOFTBREAK,
   IGNORED,
 };
@@ -21,6 +22,7 @@ enum TokenType {
 enum BlockLikeType {
   PARAGRAPH,
   BLANKLINE,
+  HEADING,
 };
 
 struct Empty {};
@@ -28,6 +30,7 @@ struct Empty {};
 union BlockLikeMetadata {
   struct Empty paragraph;
   struct Empty blankline;
+  uint8_t heading;
 };
 
 struct BlockLike {
@@ -36,9 +39,15 @@ struct BlockLike {
 };
 typedef Array(struct BlockLike) BlockLikeStack;
 
+// our lexer might emit tokens in sequence
+// 1. optional(block_like_start)
+// 2. optional(starting_marker)
+// 3. optional(ignored after starting_marker)
+// 3. remaining
 enum LineParsingState {
-  START_PARSING_IGNORED,
-  JUST_PARSED_IGNORED,
+  NOT_PARSING_BLOCK_LIKE_START,
+  NOT_PARSING_STARTING_MARKER,
+  NOT_PARSING_IGNORED_AFTER_STARTING_MARKER,
   OTHERWISE,
 };
 
@@ -53,7 +62,7 @@ struct ScannerState {
 
 void init(struct ScannerState *s) {
   array_init(&(s->block_like_stack));
-  s->line_parsing_state = START_PARSING_IGNORED;
+  s->line_parsing_state = NOT_PARSING_BLOCK_LIKE_START;
 }
 void *tree_sitter_djot_external_scanner_create(void) {
   struct ScannerState *s = ts_malloc(sizeof(struct ScannerState));
@@ -109,8 +118,7 @@ void tree_sitter_djot_external_scanner_deserialize(void *payload,
   assert(length == size);
 }
 
-void consume_whitespace_at_start(TSLexer *lexer) {
-  assert(lexer->get_column(lexer) == 0);
+void consume_whitespace(TSLexer *lexer) {
   while (lexer->lookahead == ' ' || lexer->lookahead == '\t') {
     lexer->advance(lexer, true);
   }
@@ -119,9 +127,13 @@ void consume_whitespace_at_start(TSLexer *lexer) {
 void push_block_like(struct ScannerState *s, struct BlockLike b) {
 #ifdef TREE_SITTER_DEBUG
   if (b.type == PARAGRAPH) {
-    printf("---push paragraph\n");
+    printf("--- push paragraph\n");
   } else if (b.type == BLANKLINE) {
-    printf("---push blankline\n");
+    printf("--- push blankline\n");
+  } else if (b.type == HEADING) {
+    printf("--- push heading %d\n", b.metadata.heading);
+  } else {
+    assert(false);
   }
 #endif
   array_push(&(s->block_like_stack), b);
@@ -155,13 +167,25 @@ static void accpet_softbreak(struct ScannerState *s, TSLexer *lexer,
   lexer->result_symbol = SOFTBREAK;
 }
 
+static uint8_t count_heading_level(TSLexer *lexer) {
+  uint8_t heading_level = 0;
+  while (lexer->lookahead == '#') {
+    ++heading_level;
+    lexer->advance(lexer, false);
+  }
+#ifdef TREE_SITTER_DEBUG
+  printf("--- heading level %d\n", heading_level);
+#endif
+  return heading_level;
+}
+
 static bool parse_eol(struct ScannerState *s, TSLexer *lexer,
                       const bool *valid_symbols) {
   // if it's eol
   // we must accpet that since we always parse eol manually
   lexer->advance(lexer, false);
   lexer->mark_end(lexer);
-  s->line_parsing_state = START_PARSING_IGNORED;
+  s->line_parsing_state = NOT_PARSING_BLOCK_LIKE_START;
 #ifdef TREE_SITTER_DEBUG
   printf("--- state from OTHERWISE to START_PARSING_IGNORED\n");
 #endif
@@ -173,10 +197,28 @@ static bool parse_eol(struct ScannerState *s, TSLexer *lexer,
     if (lexer->eof(lexer)) {
       accpet_block_like_end(s, lexer, valid_symbols);
     } else {
-      consume_whitespace_at_start(lexer);
+      consume_whitespace(lexer);
       bool is_newline = lexer->lookahead == '\n';
       if (is_newline) {
         accpet_block_like_end(s, lexer, valid_symbols);
+      } else {
+        accpet_softbreak(s, lexer, valid_symbols);
+      }
+    }
+  } else if (t.type == HEADING) {
+    if (lexer->eof(lexer)) {
+      accpet_block_like_end(s, lexer, valid_symbols);
+    } else {
+      consume_whitespace(lexer);
+      if (lexer->lookahead == '\n') {
+        accpet_block_like_end(s, lexer, valid_symbols);
+      } else if (lexer->lookahead == '#') {
+        uint8_t heading_level = count_heading_level(lexer);
+        if (heading_level == t.metadata.heading) {
+          accpet_softbreak(s, lexer, valid_symbols);
+        } else {
+          accpet_block_like_end(s, lexer, valid_symbols);
+        }
       } else {
         accpet_softbreak(s, lexer, valid_symbols);
       }
@@ -198,33 +240,20 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
     return false;
   }
 
-  // when parsing, we have three possible case
-  // 1. at the start of line, and we haven't parsed anything
-  // 2. we have comsumed all leading whitespaces (zero or more) but havn't do
-  // anything else
-  // 3. we have done something
-  if (s->line_parsing_state == START_PARSING_IGNORED) {
-    s->line_parsing_state = JUST_PARSED_IGNORED;
-#ifdef TREE_SITTER_DEBUG
-    printf("--- state from START_PARSING_IGNORED to JUST_PARSED_IGNORED\n");
-#endif
+  if (s->line_parsing_state == NOT_PARSING_BLOCK_LIKE_START) {
     assert(lexer->get_column(lexer) == 0);
-    // if it's start
-    // jump over leading spaces, treat them as ignored
-    consume_whitespace_at_start(lexer);
-    lexer->mark_end(lexer);
-    assert(valid_symbols[IGNORED]);
-    lexer->result_symbol = IGNORED;
-    return true;
-  } else if (s->line_parsing_state == JUST_PARSED_IGNORED) {
-    s->line_parsing_state = OTHERWISE;
-#ifdef TREE_SITTER_DEBUG
-    printf("--- state from JUST_PARSED_IGNORED to OTHERWISE\n");
-#endif
+    consume_whitespace(lexer);
     if (s->block_like_stack.size == 0) {
-      // if no block is open, search for newline or paragraph
+      // if no block is open, search for block start
       if (lexer->lookahead == '\n') {
         struct BlockLike b = {.type = BLANKLINE, .metadata = {.blankline = {}}};
+        push_block_like(s, b);
+      } else if (lexer->lookahead == '#') {
+        // we just count for # number, don't consume them
+        lexer->mark_end(lexer);
+        uint8_t heading_level = count_heading_level(lexer);
+        struct BlockLike b = {.type = HEADING,
+                              .metadata = {.heading = heading_level}};
         push_block_like(s, b);
       } else {
         struct BlockLike b = {.type = PARAGRAPH, .metadata = {.paragraph = {}}};
@@ -236,13 +265,45 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
       struct BlockLike t = *array_back(&(s->block_like_stack));
       if (t.type == PARAGRAPH) {
         // if current block is paragraph, continue parsing
+        assert(valid_symbols[IGNORED]);
+        lexer->result_symbol = IGNORED;
       } else if (t.type == BLANKLINE) {
         // if current block is blankline, it's impossible
         assert(false);
+      } else if (t.type == HEADING) {
+        assert(valid_symbols[IGNORED]);
+        lexer->result_symbol = IGNORED;
+      } else {
+        assert(false);
       }
+    }
+    s->line_parsing_state = NOT_PARSING_STARTING_MARKER;
+    return true;
+  } else if (s->line_parsing_state == NOT_PARSING_STARTING_MARKER) {
+    assert(s->block_like_stack.size > 0);
+    struct BlockLike t = *array_back(&(s->block_like_stack));
+    if (t.type == HEADING && lexer->lookahead == '#') {
+      // if current block is heading, there is two possible cases
+      // 1. it's a heading marker
+      // 2. it's simple continuation
+      // we just need to handle the first case, the latter can be handled by
+      // default scanner
+      uint8_t heading_level = count_heading_level(lexer);
+      assert(heading_level == t.metadata.heading);
+      assert(valid_symbols[HEADING_MARKER]);
+      lexer->result_symbol = HEADING_MARKER;
+    } else {
       assert(valid_symbols[IGNORED]);
       lexer->result_symbol = IGNORED;
     }
+    s->line_parsing_state = NOT_PARSING_IGNORED_AFTER_STARTING_MARKER;
+    return true;
+  } else if (s->line_parsing_state ==
+             NOT_PARSING_IGNORED_AFTER_STARTING_MARKER) {
+    consume_whitespace(lexer);
+    assert(valid_symbols[IGNORED]);
+    lexer->result_symbol = IGNORED;
+    s->line_parsing_state = OTHERWISE;
     return true;
   } else if (s->line_parsing_state == OTHERWISE) {
 #ifdef TREE_SITTER_DEBUG
