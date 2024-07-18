@@ -150,3 +150,37 @@ Heading: multiline headings using softbreak and markers
       (heading_marker)
       (inline
         (str)))))
+
+===============================================================================
+Heading: simple with hash as content
+===============================================================================
+# # a
+
+-------------------------------------------------------------------------------
+
+(document
+  (block
+    (heading
+      (heading_marker)
+      (inline
+        (str)))))
+
+===============================================================================
+Heading: multiline heading with hash as content
+===============================================================================
+# # a
+# # a
+
+-------------------------------------------------------------------------------
+
+(document
+  (block
+    (heading
+      (heading_marker)
+      (inline
+        (str))
+      (inline
+        (softbreak))
+      (heading_marker)
+      (inline
+        (str)))))
