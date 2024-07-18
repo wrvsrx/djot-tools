@@ -402,6 +402,58 @@ static bool parse_starting_maker(struct ScannerState *s, TSLexer *lexer,
   return true;
 }
 
+static bool parse_block_like_end_zero_length(struct ScannerState *s,
+                                             TSLexer *lexer,
+                                             const bool *valid_symbols) {
+  lexer->mark_end(lexer);
+  if (s->block_like_stack.size == 0) {
+    // if no block is open, we don't need to close anything
+    accept_ignored(s, lexer, valid_symbols);
+    s->line_parsing_state = PARSING_BLOCK_LIKE_START;
+    return true;
+  }
+
+  struct BlockLike *t = array_back(&(s->block_like_stack));
+  if (t->type == PARAGRAPH) {
+    // it's impossible since PARAGRAPH can't nest other blocks
+    assert(false);
+  } else if (t->type == BLANKLINE) {
+    // it's impossible since BLANKLINE can't nest other blocks
+    assert(false);
+  } else if (t->type == HEADING) {
+    // it's impossible since HEADING can't nest other blocks
+    assert(false);
+  } else if (t->type == SECTION) {
+
+    if (lexer->eof(lexer)) {
+      accept_block_like_end_zero_length(s, lexer, valid_symbols);
+      return true;
+    }
+    consume_whitespace(lexer);
+
+    if (lexer->lookahead == '#') {
+      uint8_t heading_level = count_heading_level(lexer);
+      if (heading_level <= t->data.section.level) {
+        // if next line is heading at the same or lower level, close this
+        // section
+        accept_block_like_end_zero_length(s, lexer, valid_symbols);
+      } else {
+        accept_ignored(s, lexer, valid_symbols);
+      }
+    } else {
+      accept_ignored(s, lexer, valid_symbols);
+    }
+  } else {
+    assert(false);
+  }
+  if (lexer->result_symbol == IGNORED) {
+    s->line_parsing_state = PARSING_BLOCK_LIKE_START;
+  } else {
+    s->line_parsing_state = PARSING_BLOCK_LIKE_END_ZERO_LENGTH;
+  }
+  return true;
+}
+
 bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
                                             const bool *valid_symbols) {
   struct ScannerState *s = payload;
@@ -459,52 +511,7 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
 #ifdef TREE_SITTER_DEBUG
     printf("--- parsing block_like_end_zero_length\n");
 #endif
-    lexer->mark_end(lexer);
-    if (s->block_like_stack.size == 0) {
-      // if no block is open, we don't need to close anything
-      accept_ignored(s, lexer, valid_symbols);
-      s->line_parsing_state = PARSING_BLOCK_LIKE_START;
-      return true;
-    }
-
-    struct BlockLike *t = array_back(&(s->block_like_stack));
-    if (t->type == PARAGRAPH) {
-      // it's impossible since PARAGRAPH can't nest other blocks
-      assert(false);
-    } else if (t->type == BLANKLINE) {
-      // it's impossible since BLANKLINE can't nest other blocks
-      assert(false);
-    } else if (t->type == HEADING) {
-      // it's impossible since HEADING can't nest other blocks
-      assert(false);
-    } else if (t->type == SECTION) {
-
-      if (lexer->eof(lexer)) {
-        accept_block_like_end_zero_length(s, lexer, valid_symbols);
-        return true;
-      }
-      consume_whitespace(lexer);
-
-      if (lexer->lookahead == '#') {
-        uint8_t heading_level = count_heading_level(lexer);
-        if (heading_level <= t->data.section.level) {
-          // if next line is heading at the same or lower level, close this
-          // section
-          accept_block_like_end_zero_length(s, lexer, valid_symbols);
-        } else {
-          accept_ignored(s, lexer, valid_symbols);
-        }
-      } else {
-        accept_ignored(s, lexer, valid_symbols);
-      }
-    } else {
-      assert(false);
-    }
-    if (lexer->result_symbol == IGNORED) {
-      s->line_parsing_state = PARSING_BLOCK_LIKE_START;
-    } else {
-      s->line_parsing_state = PARSING_BLOCK_LIKE_END_ZERO_LENGTH;
-    }
+    assert(parse_block_like_end_zero_length(s, lexer, valid_symbols));
     return true;
   } else {
     assert(false);
