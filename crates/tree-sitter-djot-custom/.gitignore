@@ -14,3 +14,5 @@
 /src/tree_sitter/
 /Cargo.toml
 /binding.gyp
+/package.json
+/package-lock.json
