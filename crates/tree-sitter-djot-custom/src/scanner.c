@@ -1,12 +1,12 @@
 #include "tree_sitter/alloc.h"
 #include "tree_sitter/array.h"
 #include "tree_sitter/parser.h"
-#include <stdio.h>
 
 // #define TREE_SITTER_DEBUG
 
 #ifdef TREE_SITTER_DEBUG
 #include <assert.h>
+#include <stdio.h>
 #endif
 
 // The different tokens the external scanner support
@@ -179,13 +179,13 @@ static void pop_block_like(struct ScannerState *s) {
   array_pop(&(s->block_like_stack));
 }
 
-static void accpet_block_like_end_eol(struct ScannerState *s, TSLexer *lexer,
+static void accept_block_like_end_eol(struct ScannerState *s, TSLexer *lexer,
                                       const bool *valid_symbols) {
   assert(valid_symbols[BLOCK_LIKE_END_EOL]);
   lexer->result_symbol = BLOCK_LIKE_END_EOL;
   pop_block_like(s);
 }
-static void accpet_block_like_end_zero_length(struct ScannerState *s,
+static void accept_block_like_end_zero_length(struct ScannerState *s,
                                               TSLexer *lexer,
                                               const bool *valid_symbols) {
   assert(valid_symbols[BLOCK_LIKE_END_ZERO_LENGTH]);
@@ -193,13 +193,22 @@ static void accpet_block_like_end_zero_length(struct ScannerState *s,
   pop_block_like(s);
 }
 
-static void accpet_softbreak(struct ScannerState *s, TSLexer *lexer,
+static void accept_softbreak(struct ScannerState *s, TSLexer *lexer,
                              const bool *valid_symbols) {
 #ifdef TREE_SITTER_DEBUG
   printf("--- accept softbreak\n");
 #endif
   assert(valid_symbols[SOFTBREAK]);
   lexer->result_symbol = SOFTBREAK;
+}
+
+static void accept_ignored(struct ScannerState *s, TSLexer *lexer,
+                           const bool *valid_symbols) {
+#ifdef TREE_SITTER_DEBUG
+  printf("--- accept ignored\n");
+#endif
+  assert(valid_symbols[IGNORED]);
+  lexer->result_symbol = IGNORED;
 }
 
 static uint8_t count_heading_level(TSLexer *lexer) {
@@ -221,41 +230,41 @@ static bool parse_eol(struct ScannerState *s, TSLexer *lexer,
   assert(s->block_like_stack.size > 0);
   struct BlockLike *t = array_back(&(s->block_like_stack));
   if (t->type == BLANKLINE) {
-    accpet_block_like_end_eol(s, lexer, valid_symbols);
+    accept_block_like_end_eol(s, lexer, valid_symbols);
   } else if (t->type == PARAGRAPH) {
     if (lexer->eof(lexer)) {
-      accpet_block_like_end_eol(s, lexer, valid_symbols);
+      accept_block_like_end_eol(s, lexer, valid_symbols);
     } else {
       consume_whitespace(lexer);
       bool is_newline = lexer->lookahead == '\n';
       if (is_newline) {
-        accpet_block_like_end_eol(s, lexer, valid_symbols);
+        accept_block_like_end_eol(s, lexer, valid_symbols);
       } else {
-        accpet_softbreak(s, lexer, valid_symbols);
+        accept_softbreak(s, lexer, valid_symbols);
       }
     }
   } else if (t->type == HEADING) {
     // reset need_to_parse flag
     t->data.heading.need_to_parse = true;
     if (lexer->eof(lexer)) {
-      accpet_block_like_end_eol(s, lexer, valid_symbols);
+      accept_block_like_end_eol(s, lexer, valid_symbols);
     } else {
       consume_whitespace(lexer);
       if (lexer->lookahead == '\n') {
-        accpet_block_like_end_eol(s, lexer, valid_symbols);
+        accept_block_like_end_eol(s, lexer, valid_symbols);
       } else if (lexer->lookahead == '#') {
         uint8_t heading_level = count_heading_level(lexer);
         if (lexer->lookahead == ' ' || lexer->lookahead == '\n') {
           if (heading_level == t->data.heading.level) {
-            accpet_softbreak(s, lexer, valid_symbols);
+            accept_softbreak(s, lexer, valid_symbols);
           } else {
-            accpet_block_like_end_eol(s, lexer, valid_symbols);
+            accept_block_like_end_eol(s, lexer, valid_symbols);
           }
         } else {
-          accpet_softbreak(s, lexer, valid_symbols);
+          accept_softbreak(s, lexer, valid_symbols);
         }
       } else {
-        accpet_softbreak(s, lexer, valid_symbols);
+        accept_softbreak(s, lexer, valid_symbols);
       }
     }
   } else if (t->type == SECTION) {
@@ -310,16 +319,14 @@ static bool parse_block_like_start(struct ScannerState *s, TSLexer *lexer,
     if (t->type == PARAGRAPH) {
       // if current block is paragraph, continue parsing since it can't nest
       // other blocks
-      assert(valid_symbols[IGNORED]);
-      lexer->result_symbol = IGNORED;
+      accept_ignored(s, lexer, valid_symbols);
     } else if (t->type == BLANKLINE) {
       // if current block is blankline, it's impossible
       assert(false);
     } else if (t->type == HEADING) {
       // if current block is paragraph, continue parsing since it can't nest
       // other blocks
-      assert(valid_symbols[IGNORED]);
-      lexer->result_symbol = IGNORED;
+      accept_ignored(s, lexer, valid_symbols);
     } else if (t->type == SECTION) {
       // there might be two cases
       // 1. we meet another blocks
@@ -384,16 +391,13 @@ static bool parse_starting_maker(struct ScannerState *s, TSLexer *lexer,
         assert(valid_symbols[HEADING_MARKER]);
         lexer->result_symbol = HEADING_MARKER;
       } else {
-        assert(valid_symbols[IGNORED]);
-        lexer->result_symbol = IGNORED;
+        accept_ignored(s, lexer, valid_symbols);
       }
     } else {
-      assert(valid_symbols[IGNORED]);
-      lexer->result_symbol = IGNORED;
+      accept_ignored(s, lexer, valid_symbols);
     }
   } else {
-    assert(valid_symbols[IGNORED]);
-    lexer->result_symbol = IGNORED;
+    accept_ignored(s, lexer, valid_symbols);
   }
   return true;
 }
@@ -458,8 +462,7 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
     lexer->mark_end(lexer);
     if (s->block_like_stack.size == 0) {
       // if no block is open, we don't need to close anything
-      assert(valid_symbols[IGNORED]);
-      lexer->result_symbol = IGNORED;
+      accept_ignored(s, lexer, valid_symbols);
       s->line_parsing_state = PARSING_BLOCK_LIKE_START;
       return true;
     }
@@ -477,7 +480,7 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
     } else if (t->type == SECTION) {
 
       if (lexer->eof(lexer)) {
-        accpet_block_like_end_zero_length(s, lexer, valid_symbols);
+        accept_block_like_end_zero_length(s, lexer, valid_symbols);
         return true;
       }
       consume_whitespace(lexer);
@@ -487,14 +490,12 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
         if (heading_level <= t->data.section.level) {
           // if next line is heading at the same or lower level, close this
           // section
-          accpet_block_like_end_zero_length(s, lexer, valid_symbols);
+          accept_block_like_end_zero_length(s, lexer, valid_symbols);
         } else {
-          assert(valid_symbols[IGNORED]);
-          lexer->result_symbol = IGNORED;
+          accept_ignored(s, lexer, valid_symbols);
         }
       } else {
-        assert(valid_symbols[IGNORED]);
-        lexer->result_symbol = IGNORED;
+        accept_ignored(s, lexer, valid_symbols);
       }
     } else {
       assert(false);
