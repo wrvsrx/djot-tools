@@ -138,6 +138,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "dashmap 6.0.1",
+ "jotdown",
  "ropey",
  "tokio",
  "tower-lsp",
@@ -271,6 +272,12 @@ name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
+
+[[package]]
+name = "jotdown"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b87ebc8a1c0fdfdedb65abbffb023e45ebbbfe089625f93f6f5acc56685c0abf"
 
 [[package]]
 name = "libc"
@@ -752,6 +759,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-djot"
 version = "0.0.1"
+source = "git+https://github.com/treeman/tree-sitter-djot.git#886601b67d1f4690173a4925c214343c30704d32"
 dependencies = [
  "cc",
  "tree-sitter",
