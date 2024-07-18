@@ -414,17 +414,14 @@ static bool parse_block_like_end_zero_length(struct ScannerState *s,
   }
 
   struct BlockLike *t = array_back(&(s->block_like_stack));
-  if (t->type == PARAGRAPH) {
-    // it's impossible since PARAGRAPH can't nest other blocks
+  switch (t->type) {
+  case PARAGRAPH:
+  case BLANKLINE:
+  case HEADING:
+    // it's impossible since PARAGRAPH, BLANKLINE and HEADING can't nest other
+    // blocks
     assert(false);
-  } else if (t->type == BLANKLINE) {
-    // it's impossible since BLANKLINE can't nest other blocks
-    assert(false);
-  } else if (t->type == HEADING) {
-    // it's impossible since HEADING can't nest other blocks
-    assert(false);
-  } else if (t->type == SECTION) {
-
+  case SECTION:
     if (lexer->eof(lexer)) {
       accept_block_like_end_zero_length(s, lexer, valid_symbols);
       return true;
@@ -443,7 +440,8 @@ static bool parse_block_like_end_zero_length(struct ScannerState *s,
     } else {
       accept_ignored(s, lexer, valid_symbols);
     }
-  } else {
+    break;
+  default:
     assert(false);
   }
   if (lexer->result_symbol == IGNORED) {
@@ -467,19 +465,24 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
     }
     assert(parse_block_like_start(s, lexer, valid_symbols));
     struct BlockLike *t = array_back(&(s->block_like_stack));
-    if (t->type == HEADING) {
-      // we only need to parse starting marker when
-      // - HEADING
-      s->line_parsing_state = PARSING_STARTING_MARKER;
-    } else if (t->type == PARAGRAPH || t->type == BLANKLINE) {
+    switch (t->type) {
       // we don't need to parse starting marker when
       // - PARAGRAPH
       // - BLANKLINE
+    case PARAGRAPH:
+    case BLANKLINE:
       s->line_parsing_state = OTHERWISE;
-    } else if (t->type == SECTION) {
+      break;
+    case HEADING:
+      // we only need to parse starting marker when
+      // - HEADING
+      s->line_parsing_state = PARSING_STARTING_MARKER;
+      break;
+    case SECTION:
       // we have to determine inner block type
       s->line_parsing_state = PARSING_BLOCK_LIKE_START;
-    } else {
+      break;
+    default:
       assert(false);
     }
     return true;
@@ -498,11 +501,14 @@ bool tree_sitter_djot_external_scanner_scan(void *payload, TSLexer *lexer,
       // parse softbreak or block_like_end
       // if it isn't start or start has been parsed
       assert(parse_eol(s, lexer, valid_symbols));
-      if (lexer->result_symbol == BLOCK_LIKE_END_EOL) {
+      switch (lexer->result_symbol) {
+      case BLOCK_LIKE_END_EOL:
         s->line_parsing_state = PARSING_BLOCK_LIKE_END_ZERO_LENGTH;
-      } else if (lexer->result_symbol == SOFTBREAK) {
+        break;
+      case SOFTBREAK:
         s->line_parsing_state = PARSING_BLOCK_LIKE_START;
-      } else {
+        break;
+      default:
         assert(false);
       }
       return true;
