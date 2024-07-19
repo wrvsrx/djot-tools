@@ -4,29 +4,32 @@ use tokio;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
-use tree_sitter::{Parser, Tree};
 
+mod adapter;
+mod ast;
 mod document_symbol;
 mod utils;
 
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    ast_map: DashMap<String, Tree>,
-    document_map: DashMap<String, Rope>,
+    doc_and_ast_map: DashMap<String, (Rope, Vec<ast::Node>)>,
 }
 
 impl Backend {
     async fn on_change(&self, params: TextDocumentItem) {
         let rope = ropey::Rope::from_str(&params.text);
-        self.document_map
-            .insert(params.uri.to_string(), rope.clone());
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_djot::language())
-            .expect("Error loading djot grammer");
-        let tree = parser.parse(rope.to_string(), None).unwrap();
-        self.ast_map.insert(params.uri.to_string(), tree);
+
+        let mut events = jotdown::Parser::new(&params.text).into_offset_iter();
+        let nodes = {
+            let mut res = Vec::new();
+            while let Some(offset_e) = events.next() {
+                res.push(ast::Node::new(&offset_e, &mut events));
+            }
+            res
+        };
+        self.doc_and_ast_map
+            .insert(params.uri.to_string(), (rope, nodes));
     }
 }
 
@@ -73,22 +76,18 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         self.client
-            .log_message(MessageType::INFO, format!("{:?}", self.ast_map))
+            .log_message(MessageType::INFO, format!("{:?}", self.doc_and_ast_map))
             .await;
 
-        let tree = self
-            .ast_map
+        let tns = self
+            .doc_and_ast_map
             .get(&params.text_document.uri.to_string())
             .unwrap();
-        let text = self
-            .document_map
-            .get(&params.text_document.uri.to_string())
-            .unwrap();
-        let mut cursor = tree.root_node().walk();
-        let symbols: Vec<DocumentSymbol> = tree
-            .root_node()
-            .children(&mut cursor)
-            .filter_map(|child| document_symbol::find_document_heading(child, &text))
+        let text = &tns.0;
+        let nodes = &tns.1;
+        let symbols: Vec<DocumentSymbol> = nodes
+            .into_iter()
+            .filter_map(|child| document_symbol::find_document_heading(text, child))
             .collect();
         Ok(Some(DocumentSymbolResponse::Nested(symbols)))
     }
@@ -111,8 +110,7 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        ast_map: DashMap::new(),
-        document_map: DashMap::new(),
+        doc_and_ast_map: DashMap::new(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

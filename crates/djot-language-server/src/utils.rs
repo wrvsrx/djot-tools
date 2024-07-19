@@ -1,19 +1,18 @@
-// fn offset_to_position(offset: usize, rope: &Rope) -> Option<Position> {
-//     let line = rope.try_char_to_line(offset).ok()?;
-//     let first_char_of_line = rope.try_line_to_char(line).ok()?;
-//     let column = offset - first_char_of_line;
-//     Some(Position::new(line as u32, column as u32))
-// }
+use tower_lsp::lsp_types::Position;
+pub fn byte_offset_to_position(byte_offset: usize, rope: &ropey::Rope) -> Option<Position> {
+    let char_offset = rope.try_byte_to_char(byte_offset).ok()?;
+    let line = rope.try_byte_to_line(char_offset).ok()?;
+    let first_char_of_line = rope.try_line_to_char(line).ok()?;
+    let column = char_offset - first_char_of_line;
+    Some(Position::new(line as u32, column as u32))
+}
 
-pub fn treesitter_range_to_lsp_range(r: tree_sitter::Range) -> tower_lsp::lsp_types::Range {
+pub fn byte_range_to_lsp_range(
+    r: &std::ops::Range<usize>,
+    rope: &ropey::Rope,
+) -> tower_lsp::lsp_types::Range {
     tower_lsp::lsp_types::Range {
-        start: tower_lsp::lsp_types::Position {
-            line: r.start_point.row as u32,
-            character: r.start_point.column as u32,
-        },
-        end: tower_lsp::lsp_types::Position {
-            line: r.end_point.row as u32,
-            character: r.end_point.column as u32,
-        },
+        start: byte_offset_to_position(r.start, rope).unwrap(),
+        end: byte_offset_to_position(r.end, rope).unwrap(),
     }
 }

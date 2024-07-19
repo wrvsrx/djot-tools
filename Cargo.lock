@@ -143,7 +143,6 @@ dependencies = [
  "tokio",
  "tower-lsp",
  "tree-sitter",
- "tree-sitter-djot",
  "uri",
 ]
 
@@ -754,15 +753,6 @@ checksum = "df7cc499ceadd4dcdf7ec6d4cbc34ece92c3fa07821e287aedecd4416c516dca"
 dependencies = [
  "cc",
  "regex",
-]
-
-[[package]]
-name = "tree-sitter-djot"
-version = "0.0.1"
-source = "git+https://github.com/treeman/tree-sitter-djot.git#886601b67d1f4690173a4925c214343c30704d32"
-dependencies = [
- "cc",
- "tree-sitter",
 ]
 
 [[package]]

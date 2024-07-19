@@ -1,0 +1,11 @@
+{
+  "languageserver": {
+    "djot": {
+      "command": "./target/debug/djot-language-server",
+      "filetypes": [
+        "djot"
+      ],
+      "trace.server": "verbose"
+    }
+  }
+}
