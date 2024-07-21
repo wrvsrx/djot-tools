@@ -1,8 +1,19 @@
+# Parsing Strategy
+
 We parse tokens of djot manually.
 
 we have a two stacks, block stack and inline stack.
 
 parse block and inline alternatively.
 
-1. at block beginning, determine if we need to push into block stack or into inline parsing.
-1. at inline parsing, determine if we need to stop inline parsing and pop from block stack.
+1. at block beginning, determine
+
+   - push something into block stack one times
+   - push something into inline stack and change into inline parsing
+
+1. at inline begging, determine
+
+   - extend current inline token
+   - push into inline stack
+   - change previous inline stack
+   - pop from inline stack
