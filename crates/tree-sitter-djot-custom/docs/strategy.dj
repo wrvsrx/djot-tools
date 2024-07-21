@@ -1,0 +1,8 @@
+We parse tokens of djot manually.
+
+we have a two stacks, block stack and inline stack.
+
+parse block and inline alternatively.
+
+1. at block beginning, determine if we need to push into block stack or into inline parsing.
+1. at inline parsing, determine if we need to stop inline parsing and pop from block stack.
