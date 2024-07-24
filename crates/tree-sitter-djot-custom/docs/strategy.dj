@@ -2,6 +2,61 @@
 
 We parse tokens of djot manually.
 
+All blocks has following structure:
+
+1. `_<block_name>_start`
+1. `<block_name_content>`
+1. `_<block_name>_end`
+
+We want to implement such function to be called repeatly:
+
+``` haskell
+parse :: State -> IO Cursor -> IO (Token, State)
+```
+
+We maintain the following state:
+
+{% we get them from PState of djoths %}
+
+``` haskell
+data State =
+  PState
+  { psParseOptions :: ParseOptions
+  , psContainerStack :: NonEmpty Container
+  -- we don't implement it now
+  , psAttributes :: Attr
+  , psAttrParserState :: Maybe AttrParserState
+  -- to pop remained tokens
+  , remainedTokens :: [Token]
+  -- to remember readed tokens
+  , readedChar :: [Char]
+  }
+```
+
+``` haskell
+-- this is called at line start
+parseBlock state cursor = do
+  let
+    containers = state.psContainerStack
+    allContainersMatch =
+  return ()
+
+parseInline state cursor = do
+  ...
+```
+
+Q: HOW TO DETERMINE VERBATIM
+A: We first judge block then verbatim
+
+Q: Can we wall parseInline only at block end?
+A: Better Not, it makes our stack large. Max size of the stack is only 1KB.
+
+Q: Can we parseInline one the fly?
+A: Maybe, I need to invesitigate the algorithm.
+
+Q: Can we store char into buffer
+A: No, since buffer size is limited. The most thing we can do is store token and emit them.
+
 we have a two stacks, block stack and inline stack.
 
 parse block and inline alternatively.
