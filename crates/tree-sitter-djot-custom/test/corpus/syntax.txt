@@ -244,18 +244,20 @@ Section: Nested section
 -------------------------------------------------------------------------------
 
 (document
-  (section
-    (heading
-      (heading_marker)
-      (inline
-        (str)))
-    (block
-      (blankline))
+  (block
     (section
       (heading
         (heading_marker)
         (inline
-          (str))))))
+          (str)))
+      (block
+        (blankline))
+      (block
+        (section
+          (heading
+            (heading_marker)
+            (inline
+              (str))))))))
 
 ===============================================================================
 Section: Nested section without blankline
@@ -266,16 +268,18 @@ Section: Nested section without blankline
 -------------------------------------------------------------------------------
 
 (document
-  (section
-    (heading
-      (heading_marker)
-      (inline
-        (str)))
+  (block
     (section
       (heading
         (heading_marker)
         (inline
-          (str))))))
+          (str)))
+      (block
+        (section
+          (heading
+            (heading_marker)
+            (inline
+              (str))))))))
 
 ===============================================================================
 Section: Nested section with empty heading
@@ -286,14 +290,16 @@ Section: Nested section with empty heading
 -------------------------------------------------------------------------------
 
 (document
-  (section
-    (heading
-      (heading_marker))
+  (block
     (section
       (heading
-        (heading_marker)
-        (inline
-          (str))))))
+        (heading_marker))
+      (block
+        (section
+          (heading
+            (heading_marker)
+            (inline
+              (str))))))))
 
 ===============================================================================
 Section: Multiple nested sections
@@ -311,27 +317,7 @@ Section: Multiple nested sections
 -------------------------------------------------------------------------------
 
 (document
-  (section
-    (heading
-      (heading_marker)
-      (inline
-        (str)))
-    (block
-      (blankline))
-    (section
-      (heading
-        (heading_marker)
-        (inline
-          (str)))
-      (block
-        (blankline))))
-  (section
-    (heading
-      (heading_marker)
-      (inline
-        (str)))
-    (block
-      (blankline))
+  (block
     (section
       (heading
         (heading_marker)
@@ -339,8 +325,33 @@ Section: Multiple nested sections
           (str)))
       (block
         (blankline))
-      (section
-        (heading
-          (heading_marker)
-          (inline
-            (str)))))))
+      (block
+        (section
+          (heading
+            (heading_marker)
+            (inline
+              (str)))
+          (block
+            (blankline))))))
+  (block
+    (section
+      (heading
+        (heading_marker)
+        (inline
+          (str)))
+      (block
+        (blankline))
+      (block
+        (section
+          (heading
+            (heading_marker)
+            (inline
+              (str)))
+          (block
+            (blankline))
+          (block
+            (section
+              (heading
+                (heading_marker)
+                (inline
+                  (str))))))))))

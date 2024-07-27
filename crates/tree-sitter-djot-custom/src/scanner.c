@@ -3,7 +3,7 @@
 #include "tree_sitter/parser.h"
 #include <stdint.h>
 
-#define TREE_SITTER_DEBUG
+// #define TREE_SITTER_DEBUG
 
 #ifdef TREE_SITTER_DEBUG
 #include <assert.h>
@@ -418,16 +418,18 @@ static bool try_parse_heading_start(struct ScannerState *s, TSLexer *lexer,
   struct Block *t = array_back(&(s->block_array));
   uint8_t heading_level = count_heading_level(lexer);
   if (heading_level > 0) {
-    // section must start with a heading together
-    assert(t->type != SECTION);
     switch (t->type) {
+    case SECTION:
+      // nested section level should be larger than current section
+      assert(t->data.section.level < heading_level);
     case DOCUMENT:
-      // if we're at top level, then we should start a section and a heading
+      // if we're at top level or other sections, then we should start a section
+      // and a heading
       push_block(s,
                  (struct Block){.type = SECTION,
                                 .data = {.heading = {.level = heading_level}}});
       push_token(s, (struct Token){.type = SECTION_START, .length = 0});
-    default:
+
       // otherwise, we should only start a heading
       push_block(s,
                  (struct Block){.type = HEADING,
@@ -435,6 +437,11 @@ static bool try_parse_heading_start(struct ScannerState *s, TSLexer *lexer,
       push_token(s, (struct Token){.type = HEADING_START, .length = 0});
       push_token(
           s, (struct Token){.type = HEADING_MARKER, .length = heading_level});
+      break;
+    case HEADING:
+    case PARAGRAPH:
+    case BLANKLINE:
+      assert(false);
     }
   } else {
     // it's not a heading
