@@ -31,12 +31,16 @@ enum TokenType {
   WORD,
   SOFTBREAK,
 
+  EMPHASIS_START,
+  EMPHASIS_END,
+
   IGNORED,
 };
 
 enum CharType {
   WHITESPACE,
   EOL,
+  UNDERSCORE,
   SHARP,
   NORMAL,
 };
@@ -87,7 +91,10 @@ static char const *block_name(enum BlockType type) {
   }
 }
 
-enum InlineType { STR };
+enum InlineType {
+  STR,
+  EMPHASIS,
+};
 
 union InlineData {
   struct Empty str;
@@ -132,6 +139,10 @@ static char const *token_name(enum TokenType type) {
     return "WORD";
   case SOFTBREAK:
     return "SOFTBREAK";
+  case EMPHASIS_START:
+    return "EMPHASIS_START";
+  case EMPHASIS_END:
+    return "EMPHASIS_END";
   case IGNORED:
     return "IGNORED";
   }
@@ -175,6 +186,16 @@ static void try_closing_blocks_when_meeting_blankline(struct ScannerState *s,
 static void try_closing_blocks_when_meeting_possible_heading(
     struct ScannerState *s, TSLexer *lexer, const bool *valid_symbols,
     uint32_t length);
+static void try_closing_inlines_when_meeting_blockend(
+    struct ScannerState *s, TSLexer *lexer, const bool *valid_symbols);
+static void try_parsing_inlines_when_meeting_eol(struct ScannerState *s,
+                                                 TSLexer *lexer,
+                                                 const bool *valid_symbols);
+static void try_parsing_inlines_when_meeting_normal(struct ScannerState *s,
+                                                    TSLexer *lexer,
+                                                    const bool *valid_symbols);
+static void try_parsing_inlines_when_meeting_whitespace(
+    struct ScannerState *s, TSLexer *lexer, const bool *valid_symbols);
 // ---- function declaration end ----
 
 void *tree_sitter_djot_external_scanner_create(void) {
@@ -407,6 +428,8 @@ static enum CharType followedBy(TSLexer const *lexer) {
     return EOL;
   case '#':
     return SHARP;
+  case '_':
+    return UNDERSCORE;
   default:
     return NORMAL;
   }
@@ -496,6 +519,8 @@ static bool containOtherInline(enum InlineType t) {
   switch (t) {
   case STR:
     return false;
+  case EMPHASIS:
+    return true;
   }
 }
 
@@ -556,12 +581,9 @@ static void try_parse_inline(struct ScannerState *s, TSLexer *lexer,
     break;
   case EOL:
     s->line_parsing_state = PARSING_EOL;
-    if (s->potential_inlines.size > 0 &&
-        array_back(&(s->potential_inlines))->type == STR) {
-      array_pop(&(s->potential_inlines));
-      push_token(s, (struct Token){.type = STR_END, .length = 0});
-    }
+    try_closing_inlines_when_meeting_blockend(s, lexer, valid_symbols);
     break;
+  case UNDERSCORE:
   case NORMAL:
   case SHARP: {
     if (s->potential_inlines.size == 0 ||
@@ -673,6 +695,7 @@ static enum TokenType close_block_token_type(enum BlockType const t) {
 }
 static void close_block(struct ScannerState *s, TSLexer *lexer,
                         const bool *valid_symbols, uint32_t const length) {
+  try_closing_inlines_when_meeting_blockend(s, lexer, valid_symbols);
   struct Block const *t = array_back(&(s->block_array));
   if (t->type != DOCUMENT) {
     enum TokenType const token_type = close_block_token_type(t->type);
@@ -769,3 +792,28 @@ static void try_closing_blocks_when_meeting_possible_heading(
   }
 }
 // ---- close block end ----
+
+// ---- inline parsing utils start ----
+static void try_closing_inlines_when_meeting_blockend(
+    struct ScannerState *s, TSLexer *lexer, const bool *valid_symbols) {
+  while (s->potential_inlines.size > 0) {
+    struct Inline *t = array_back(&(s->potential_inlines));
+    switch (t->type) {
+    case STR:
+      push_token(s, (struct Token){.type = STR_END, .length = 0});
+      break;
+    case EMPHASIS:
+      push_token(s, (struct Token){.type = EMPHASIS_END, .length = 0});
+      break;
+    }
+    array_pop(&(s->potential_inlines));
+  }
+
+  // we need to close all inlines when meeting block end
+  if (s->potential_inlines.size > 0 &&
+      array_back(&(s->potential_inlines))->type == STR) {
+    array_pop(&(s->potential_inlines));
+    push_token(s, (struct Token){.type = STR_END, .length = 0});
+  }
+}
+// ---- inline parsing utils end ----

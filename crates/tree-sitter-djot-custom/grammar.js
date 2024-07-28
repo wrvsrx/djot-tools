@@ -13,8 +13,9 @@ module.exports = grammar({
     paragraph: ($) => seq($._paragraph_start, repeat1($.inline), $._paragraph_end),
     blankline: ($) => seq($._blankline_start, $._blankline_end),
 
-    inline: ($) => choice($.str, $.softbreak),
+    inline: ($) => choice($.str, $.softbreak, $.emphasis),
     str: ($) => seq($._str_start, repeat1($._word), $._str_end),
+    emphasis: ($) => seq($._emphasis_start, repeat($.inline), $._emphasis_end),
   },
 
   externals: ($) => [
@@ -35,6 +36,9 @@ module.exports = grammar({
     $._str_end,
     $._word,
     $.softbreak,
+
+    $._emphasis_start,
+    $._emphasis_end,
 
     $._ignored,
   ],
