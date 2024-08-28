@@ -7,10 +7,14 @@ data State = Maybe BlockState
 data TokenType = StrToken | NewlineToken
 data Token = Token {tokenType :: TokenType, length :: Int}
 
-parse :: State -> String -> (State, Token)
-parse = undefined
+parseBlockStart :: State -> String -> (State, Token)
+parseBlockStart = undefined
 
--- 每次从 state 这里获得一个 parser，
+-- |每次从 state 这里获得一个 parser
+--  每次从 state 这里获得一个 parser
+parse :: State -> String -> (State, Token)
+parse state = undefined
+
 -- 如果当前在 parse block close 状态
 -- 从上到下判断每个 Block 是否需要结束
 -- 如果不需要结束，emit 一个 softbreak 继续 parse inline
