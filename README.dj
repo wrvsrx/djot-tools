@@ -69,4 +69,4 @@ project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
 
 # License
 
-Not yet specified.
+[MIT](LICENSE) © wrvsrx

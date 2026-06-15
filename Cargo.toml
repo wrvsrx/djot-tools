@@ -2,6 +2,7 @@
 name = "djot-language-server"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [[bin]]
 name = "djot-ls"
