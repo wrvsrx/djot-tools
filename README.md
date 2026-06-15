@@ -1,0 +1,72 @@
+# djot-language-server
+
+A [Language Server](https://microsoft.github.io/language-server-protocol/) for
+[Djot](https://djot.net) markup, written in Rust. It parses documents with
+[`jotdown`](https://github.com/hellux/jotdown) and speaks LSP over stdio via
+[`async-lsp`](https://github.com/oxalica/async-lsp).
+
+The binary is `djot-ls`. It handles `.dj` / `.djot` files.
+
+*This README is generated from `README.dj`:*
+`pandoc -f djot -t gfm --lua-filter=dev/strip-sections.lua README.dj -o README.md`
+
+# Features
+
+| Capability | Status | Notes |
+|----|----|----|
+| `textDocument/documentSymbol` | done | Headings as a **nested** outline (by section level). |
+| `textDocument/definition` | done | Jump from a link to its target heading/anchor **within the same file**. Works for `[x](#id)` links and implicit heading references like `[Heading][]`. |
+| Cross-file `definition` | planned | `[x](other.dj#id)` is parsed but not resolved yet. |
+| `textDocument/references` (backlinks) | planned |  |
+| `textDocument/diagnostic` | planned | e.g. broken anchors. |
+| `textDocument/completion` | planned | links, paths. |
+| `textDocument/semanticTokens` | planned |  |
+
+Anything with an id is a jump target: headings/sections (djot auto-generates ids
+from heading text) and any block or inline carrying an explicit `{#id}`
+attribute. Document sync is full-text.
+
+See [`docs/plan.dj`](docs/plan.dj) for the full roadmap.
+
+# Build
+
+``` sh
+cargo build            # produces target/debug/djot-ls
+cargo test             # black-box integration tests over stdio
+```
+
+A Nix dev shell is provided (`nix develop`, or `direnv allow` with the bundled
+flake). The toolchain is otherwise just a standard Rust + Cargo install.
+
+# Editor setup
+
+## Neovim (0.11+)
+
+A minimal config lives at [`dev/nvim.lua`](dev/nvim.lua):
+
+``` lua
+vim.lsp.config['djot-language-server'] = {
+  cmd = { './target/debug/djot-ls' },
+  filetypes = { 'djot' },
+}
+vim.lsp.enable('djot-language-server')
+```
+
+Make sure `.dj`/`.djot` files map to the `djot` filetype and that the `cmd`
+points at the built binary. Server-side logs/panics surface in `:LspLog`.
+
+## Other editors
+
+Any LSP client works – launch `djot-ls` and let it communicate over stdio. It
+advertises `documentSymbol` and `definition` support during `initialize`.
+
+# Architecture
+
+Everything currently lives in [`src/main.rs`](src/main.rs). For an overview of
+the design (the async-lsp `&mut self`/no-lock state model, how `documentSymbol`
+and the anchor/reference index are built from jotdown events) and the
+project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
+
+# License
+
+Not yet specified.
