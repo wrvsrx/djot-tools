@@ -12,21 +12,26 @@ The binary is `djot-ls`. It handles `.dj` / `.djot` files.
 
 # Features
 
-| Capability | Status | Notes |
-|----|----|----|
-| `textDocument/documentSymbol` | done | Headings as a **nested** outline (by section level). |
-| `textDocument/definition` | done | Jump from a link to its target heading/anchor **within the same file**. Works for `[x](#id)` links and implicit heading references like `[Heading][]`. |
-| Cross-file `definition` | planned | `[x](other.dj#id)` is parsed but not resolved yet. |
-| `textDocument/references` (backlinks) | planned |  |
-| `textDocument/diagnostic` | planned | e.g. broken anchors. |
-| `textDocument/completion` | planned | links, paths. |
-| `textDocument/semanticTokens` | planned |  |
+## `textDocument/documentSymbol`
 
-Anything with an id is a jump target: headings/sections (djot auto-generates ids
-from heading text) and any block or inline carrying an explicit `{#id}`
-attribute. Document sync is full-text.
+Returns the document outline: every heading becomes a symbol, nested by section
+level, so editors show a collapsible tree of the document structure.
 
-See [`docs/plan.dj`](docs/plan.dj) for the full roadmap.
+## `textDocument/definition`
+
+Jumps from a link to the heading or anchor it points at, **within the same file**.
+It works for explicit anchor links like `[text](#some-heading)` as well as
+implicit heading references like `[Some Heading][]`.
+
+Any element with an id is a valid jump target: headings and sections (djot
+auto-generates ids from the heading text) and any block or inline carrying an
+explicit `{#id}` attribute.
+
+Document sync is full-text.
+
+More capabilities (cross-file definition, backlinks, diagnostics, completion,
+semantic tokens) are planned – see [`docs/plan.dj`](docs/plan.dj) for the
+roadmap.
 
 # Build
 
