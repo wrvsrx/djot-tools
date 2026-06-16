@@ -60,6 +60,22 @@ Document conventions become export transformations here: a leading
 into pandoc metadata) rather than printed as a code block. The djot-to-pandoc
 conversion currently covers a common subset of djot.
 
+## Filter
+
+`djot-filter` scans a directory of `.dj` / `.djot` files and prints files that
+match all filters:
+
+``` sh
+djot-filter docs --metadata 'title=semantics'
+djot-filter notes --referenced-by index.dj
+djot-filter notes --referenced-by index.dj --direct
+```
+
+`--referenced-by` keeps files directly or indirectly referenced by one or more
+seed files. `--direct` restricts that to direct references. `--metadata
+KEY=REGEX` keeps files whose string metadata field matches the regex; it may be
+repeated.
+
 ## Build
 
 ``` sh
@@ -105,6 +121,8 @@ A Cargo workspace with three crates:
   `djot-core` and converts its byte-offset results to LSP types.
 - [`crates/djot-export`](crates/djot-export) – the `djot-export` CLI; it
   depends on `djot-core` and converts djot to a pandoc JSON AST.
+- [`crates/djot-filter`](crates/djot-filter) – the `djot-filter` CLI; it
+  filters directories of djot documents by references and string metadata.
 
 For the design rationale (the async-lsp `&mut self`/no-lock state model, the
 core/LSP boundary) and project-specific gotchas, see [`AGENTS.md`](AGENTS.md).

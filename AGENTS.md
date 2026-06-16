@@ -10,16 +10,17 @@ instructions.
 
 A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → references → hover → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings), `textDocument/definition` (same-file and cross-file links), `textDocument/references` (backlinks), and `textDocument/hover` (target information) are implemented.
 
-This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that converts djot to a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`).
+This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that converts djot to a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`), and `djot-filter`, a CLI for filtering directories of djot documents by references and metadata.
 
 ## Project layout
 
 - `Cargo.toml` is the workspace root. Members are `crates/djot-core`,
-  `crates/djot-ls`, and `crates/djot-export`.
+  `crates/djot-ls`, `crates/djot-export`, and `crates/djot-filter`.
 - `crates/djot-core/` is the protocol-agnostic djot analysis library.
 - `crates/djot-ls/` is the `djot-ls` LSP binary and its black-box integration
   tests.
 - `crates/djot-export/` is the `djot-export` CLI.
+- `crates/djot-filter/` is the `djot-filter` CLI.
 - `docs/plan.dj` is the feature roadmap.
 - `examples/*.dj` are small manual test fixtures for outlines, links, and
   article-style documents.
@@ -37,7 +38,10 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 - Run one test: `cargo test -p djot-ls --test document_symbol did_save_does_not_crash_the_server`
 - Test the core lib only: `cargo test -p djot-core`
 - Test the exporter only: `cargo test -p djot-export`
+- Test the filter only: `cargo test -p djot-filter`
 - Run exporter manually: `printf '# H\n' | cargo run -p djot-export -- | pandoc -f json -t markdown`
+- Run filter manually: `cargo run -p djot-filter -- docs --metadata 'title=semantics'`
+- Filter referenced docs: `cargo run -p djot-filter -- notes --referenced-by index.dj --direct`
 - The dev environment is a Nix flake (`use_flake .` via direnv); `dev/envrc` is symlinked to the repo-root `.envrc`.
 - Git hooks live in `dev/hooks/`; enable them once per clone with `git config core.hooksPath dev/hooks`. The `pre-commit` hook checks that `README.md` is still in sync with `README.dj` whenever either is committed.
 
@@ -63,14 +67,15 @@ Implication: **whenever you advertise a capability that causes editors to send a
 
 ## Architecture
 
-Three crates in a workspace, split along a deliberate boundary:
+Four crates in a workspace, split along a deliberate boundary:
 
 - **`djot-core` is protocol-agnostic and works in byte offsets only**.
 - **`djot-ls` owns everything LSP** (`lsp_types`, `async-lsp`, UTF-16
   positions).
 - **`djot-export` owns the pandoc JSON AST**.
+- **`djot-filter` owns directory filtering CLI behavior**.
 
-Both binaries reuse `djot-core` without pulling in each other's types.
+All binaries reuse `djot-core` without pulling in each other's types.
 
 `crates/djot-core/src/lib.rs` (lib, depends on `jotdown` and `serde`):
 
@@ -93,6 +98,19 @@ Both binaries reuse `djot-core` without pulling in each other's types.
   section/header conversion, smart punctuation, reference definitions, and
   metadata-body removal.
 - Verify with a round-trip: `printf '# H\n' | ./target/debug/djot-export | pandoc -f json -t markdown`.
+
+`crates/djot-filter/src/main.rs` (bin `djot-filter`, depends on `djot-core` + `clap` + `regex` + `toml`):
+
+- Recursively scans a root directory for `.dj` / `.djot` files, loads them into
+  `djot_core::Workspace`, and prints root-relative paths that match all
+  filters.
+- `--referenced-by FILE` keeps documents directly or indirectly referenced by
+  one or more seed files. Relative seed paths are interpreted relative to the
+  scan root. `--direct` restricts this to only direct references.
+- `--metadata KEY=REGEX` keeps documents whose leading metadata block has a
+  string metadata value matching the regex. Dotted keys traverse TOML tables.
+- Unit tests live in the same file and cover metadata filtering, transitive
+  references, dotted metadata keys, and seed path normalization.
 
 `crates/djot-ls/src/main.rs` (bin `djot-ls`, depends on `djot-core`):
 
@@ -119,7 +137,8 @@ Both binaries reuse `djot-core` without pulling in each other's types.
 Pure semantics (`heading_outline`, `build_index`, `parse_dst`,
 `resolve_target`, `Workspace`) are unit-tested directly in `djot-core`
 (`#[cfg(test)] mod tests` in its `lib.rs`) — faster and more precise.
-Exporter behavior is unit-tested in `crates/djot-export/src/main.rs`.
+Exporter behavior is unit-tested in `crates/djot-export/src/main.rs`. Filter
+behavior is unit-tested in `crates/djot-filter/src/main.rs`.
 
 ## Editor testing
 
