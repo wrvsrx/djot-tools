@@ -4,9 +4,12 @@
   rustPlatform ? pkgs.rustPlatform,
 }:
 
+let
+  cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+in
 rustPlatform.buildRustPackage {
-  pname = "djot-language-server";
-  version = "0.1.0";
+  pname = "djot-tools";
+  version = cargoToml.workspace.package.version;
 
   src = lib.cleanSource ./.;
 
