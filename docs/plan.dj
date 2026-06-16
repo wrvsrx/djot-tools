@@ -6,7 +6,7 @@ title = "plan"
 # Features
 
 - [ ] `textDocument/documentSymbol`
-  
+
   - [x] headings
   - [ ] anchor?
   - [ ] list?
@@ -23,8 +23,12 @@ title = "plan"
     document and show its fields as hover content
 
 - [ ] `textDocument/diagnostic`
+
+  - [ ] unresolved internal anchors
+  - [ ] unresolved cross-file anchors / paths
+
 - [ ] `textDocument/completion`
-  
+
   - [ ] links
   - [ ] paths
 
@@ -43,19 +47,7 @@ title = "plan"
   attribute (id/class) passthrough
 - [ ] richer metadata: render `author`/`date` (e.g. a byline), nested tables
 
-# Plan
-
-## jump to links
-
-1. maintain a map from node to links
-1. when need to jump, use the map to determine the link under the cursor
-1. jump
-
-## how to maintain links (and ast) on both active and inactive files
-
-- [ ] think about that
-
-## metadata hover
+# Notes
 
 The document may begin with a code block carrying the `metadata` class, e.g.
 
@@ -70,6 +62,6 @@ title = "..."
   class (`djot_core::metadata_block` / `has_class`)
 - [x] parse its contents as toml (done in `djot-export`'s `build_meta`; hover
   needs a display form rather than the pandoc `Meta` map)
-- [ ] on hover, show the parsed fields as the hover contents
-- [ ] open question: what should the hover target be -- the metadata block
+- [ ] metadata hover: show the parsed fields as the hover contents
+- [ ] metadata hover target: should it be the metadata block
   itself, the document title, or anywhere in the document?
