@@ -36,9 +36,6 @@ title = "plan"
     for incomplete link syntax
   - [x] paths
 
-- [ ] `textDocument/semanticToken/full`
-- [ ] `textDocument/semanticToken/range`?
-- [ ] `textDocument/formatting`?
 - [x] `textDocument/references`
 
 # Export
