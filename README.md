@@ -19,9 +19,11 @@ level, so editors show a collapsible tree of the document structure.
 
 ### `textDocument/definition`
 
-Jumps from a link to the heading or anchor it points at, **within the same file**.
-It works for explicit anchor links like `[text](#some-heading)` as well as
-implicit heading references like `[Some Heading][]`.
+Jumps from a link to the heading or anchor it points at, in the same file or
+another file. It works for explicit anchor links like `[text](#some-heading)`,
+cross-file links like `[text](other.dj#some-heading)`, and implicit heading
+references like `[Some Heading][]`. Cross-file targets are read from disk on
+demand.
 
 Any element with an id is a valid jump target: headings and sections (djot
 auto-generates ids from the heading text) and any block or inline carrying an
@@ -29,9 +31,8 @@ explicit `{#id}` attribute.
 
 Document sync is full-text.
 
-More capabilities (cross-file definition, backlinks, diagnostics, completion,
-semantic tokens) are planned – see [`docs/plan.dj`](docs/plan.dj) for the
-roadmap.
+More capabilities (backlinks, diagnostics, completion, semantic tokens) are
+planned – see [`docs/plan.dj`](docs/plan.dj) for the roadmap.
 
 ## Export
 
