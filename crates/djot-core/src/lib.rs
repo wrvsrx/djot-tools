@@ -379,6 +379,10 @@ impl Workspace {
 
         let mut diagnostics = Vec::new();
         for reference in &entry.index.references {
+            if !is_diagnostic_target(&reference.target) {
+                continue;
+            }
+
             let Some(target) = resolve_target(path, &reference.target) else {
                 continue;
             };
@@ -405,6 +409,21 @@ impl Workspace {
 
         diagnostics
     }
+}
+
+fn is_diagnostic_target(target: &RefTarget) -> bool {
+    match target {
+        RefTarget::Internal { .. } => true,
+        RefTarget::External { path, .. } => is_djot_path(path),
+        RefTarget::Url(_) => false,
+    }
+}
+
+fn is_djot_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext == "dj" || ext == "djot")
 }
 
 /// A djot section being assembled while walking the event stream.
@@ -550,7 +569,7 @@ mod tests {
     fn workspace_reports_unresolved_references() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
-        let doc_a = "# A\n\n[bad](#Missing) [file](missing.dj) [anchor](b.dj#Nope) [ok](https://example.com)\n";
+        let doc_a = "# A\n\n[bad](#Missing) [file](missing.dj) [anchor](b.dj#Nope) [plain](AGENTS.md) [dir](crates/djot-core) [license](LICENSE) [ok](https://example.com)\n";
         let mut ws = Workspace::new();
         ws.insert(a.clone(), doc_a.to_string());
         ws.insert(b, "# Existing\n".to_string());

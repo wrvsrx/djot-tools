@@ -14,7 +14,7 @@ fn diagnostics_report_unresolved_links() {
     std::fs::create_dir_all(&dir).unwrap();
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
-    let doc_a = "# A\n\n[missing anchor](#Missing) [missing file](missing.dj) [missing cross anchor](b.dj#Nope) [ok](b.dj#Topic) [url](https://example.com)\n";
+    let doc_a = "# A\n\n[missing anchor](#Missing) [missing file](missing.dj) [missing cross anchor](b.dj#Nope) [ok](b.dj#Topic) [plain](AGENTS.md) [dir](crates/djot-core) [license](LICENSE) [url](https://example.com)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "# Topic\n").unwrap();
 
