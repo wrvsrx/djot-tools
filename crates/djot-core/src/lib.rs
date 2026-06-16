@@ -7,8 +7,10 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::path::{Component, Path, PathBuf};
 
 use jotdown::{Attributes, Container, Event, Parser};
+use serde::{Deserialize, Serialize};
 
 /// The class that marks a leading code block as document metadata. This is a
 /// djot-ls / djot-export convention layered on djot's native attribute syntax,
@@ -32,14 +34,17 @@ pub struct Heading {
 
 /// A jump target: anything bearing an id — a heading/section, or any block or
 /// inline carrying an explicit `{#id}` attribute.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Derives `Serialize`/`Deserialize` so a persistent on-disk index cache can be
+/// layered on later without touching this type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Anchor {
     /// Byte span to jump to (the heading or anchored line).
     pub range: Range<usize>,
 }
 
 /// A link in the document and what it points at.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reference {
     /// Byte range of the whole link, for cursor hit-testing.
     pub source: Range<usize>,
@@ -49,7 +54,7 @@ pub struct Reference {
 /// The resolved destination of a link. jotdown hands us a single destination
 /// string for every link form (inline, reference, implicit), so we only need to
 /// classify that string.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefTarget {
     /// `#id` — an anchor in the same document.
     Internal { id: String },
@@ -60,7 +65,7 @@ pub enum RefTarget {
 }
 
 /// Per-document index of anchors (by id) and outgoing references.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct DocIndex {
     pub anchors: HashMap<String, Anchor>,
     pub references: Vec<Reference>,
@@ -212,6 +217,121 @@ pub fn parse_dst(dst: &str) -> RefTarget {
     }
 }
 
+/// A link target resolved to a concrete file and optional anchor id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTarget {
+    pub path: PathBuf,
+    /// `None` means the file itself (no fragment).
+    pub id: Option<String>,
+}
+
+/// Resolve a [`RefTarget`] (as seen in the document at `from`) to a concrete
+/// file + anchor. Returns `None` for external URLs, which are not file targets.
+pub fn resolve_target(from: &Path, target: &RefTarget) -> Option<ResolvedTarget> {
+    match target {
+        RefTarget::Url(_) => None,
+        RefTarget::Internal { id } => Some(ResolvedTarget {
+            path: from.to_path_buf(),
+            id: Some(id.clone()),
+        }),
+        RefTarget::External { path, id } => {
+            let base = from.parent().unwrap_or_else(|| Path::new(""));
+            Some(ResolvedTarget {
+                path: normalize(&base.join(path)),
+                id: id.clone(),
+            })
+        }
+    }
+}
+
+/// Lexically normalize a path (resolve `.`/`..` without touching the
+/// filesystem), so equal logical paths compare equal as index keys.
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// One indexed document: its text (for offset→position conversion at the LSP
+/// boundary) and its parsed [`DocIndex`].
+#[derive(Debug)]
+pub struct DocEntry {
+    pub text: String,
+    pub index: DocIndex,
+}
+
+/// An in-memory index of multiple documents, keyed by normalized path. This is
+/// the foundation for cross-file definition and (later) workspace-wide
+/// find-references; it does no I/O itself — callers load file contents in.
+#[derive(Debug, Default)]
+pub struct Workspace {
+    docs: HashMap<PathBuf, DocEntry>,
+}
+
+impl Workspace {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Parse `text` and store it under `path`, replacing any prior entry.
+    pub fn insert(&mut self, path: PathBuf, text: String) {
+        let index = build_index(&text);
+        self.docs.insert(normalize(&path), DocEntry { text, index });
+    }
+
+    pub fn remove(&mut self, path: &Path) {
+        self.docs.remove(&normalize(path));
+    }
+
+    pub fn contains(&self, path: &Path) -> bool {
+        self.docs.contains_key(&normalize(path))
+    }
+
+    pub fn get(&self, path: &Path) -> Option<&DocEntry> {
+        self.docs.get(&normalize(path))
+    }
+
+    /// The reference whose source span covers `offset` in the document at `path`.
+    pub fn reference_at(&self, path: &Path, offset: usize) -> Option<&Reference> {
+        self.get(path)?
+            .index
+            .references
+            .iter()
+            .find(|r| r.source.contains(&offset))
+    }
+
+    /// The anchor with `id` in the document at `path`.
+    pub fn anchor(&self, path: &Path, id: &str) -> Option<&Anchor> {
+        self.get(path)?.index.anchors.get(id)
+    }
+
+    /// Every loaded reference that points at `(path, id)` — the basis for
+    /// find-references. Scans all loaded documents (so completeness requires the
+    /// caller to have loaded the whole workspace first).
+    pub fn references_to(&self, path: &Path, id: &str) -> Vec<(PathBuf, Range<usize>)> {
+        let target = normalize(path);
+        let mut out = Vec::new();
+        for (src, entry) in &self.docs {
+            for reference in &entry.index.references {
+                if let Some(resolved) = resolve_target(src, &reference.target) {
+                    if resolved.path == target && resolved.id.as_deref() == Some(id) {
+                        out.push((src.clone(), reference.source.clone()));
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A djot section being assembled while walking the event stream.
 struct SectionFrame {
     range_start: usize,
@@ -286,6 +406,47 @@ mod tests {
         assert_eq!(metadata_block(text).as_deref(), Some("title = \"x\"\n"));
         // A plain code block is not metadata.
         assert_eq!(metadata_block("``` toml\ntitle = \"x\"\n```\n"), None);
+    }
+
+    #[test]
+    fn resolve_target_handles_internal_relative_and_url() {
+        let from = PathBuf::from("/notes/sub/a.dj");
+        assert_eq!(
+            resolve_target(&from, &RefTarget::Internal { id: "x".into() }).unwrap(),
+            ResolvedTarget { path: from.clone(), id: Some("x".into()) }
+        );
+        assert_eq!(
+            resolve_target(
+                &from,
+                &RefTarget::External { path: "../b.dj".into(), id: Some("y".into()) }
+            )
+            .unwrap(),
+            ResolvedTarget { path: PathBuf::from("/notes/b.dj"), id: Some("y".into()) }
+        );
+        assert!(resolve_target(&from, &RefTarget::Url("https://x".into())).is_none());
+    }
+
+    #[test]
+    fn workspace_cross_file_definition_and_backref() {
+        let a = PathBuf::from("/notes/a.dj");
+        let b = PathBuf::from("/notes/b.dj");
+        let doc_a = "# A\n\nsee [to B](b.dj#Topic)\n";
+        let mut ws = Workspace::new();
+        ws.insert(a.clone(), doc_a.to_string());
+        ws.insert(b.clone(), "# Topic\n\ntext\n".to_string());
+
+        // Cursor on the link in a.dj resolves to b.dj#Topic, which exists.
+        let offset = doc_a.find("b.dj").unwrap();
+        let reference = ws.reference_at(&a, offset).expect("reference under cursor");
+        let resolved = resolve_target(&a, &reference.target).expect("resolved");
+        assert_eq!(resolved.path, b);
+        assert_eq!(resolved.id.as_deref(), Some("Topic"));
+        assert!(ws.anchor(&resolved.path, "Topic").is_some());
+
+        // Backward: exactly one document references (b.dj, Topic).
+        let back = ws.references_to(&b, "Topic");
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].0, a);
     }
 
     #[test]

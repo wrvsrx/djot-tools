@@ -62,6 +62,7 @@ name = "djot-core"
 version = "0.1.0"
 dependencies = [
  "jotdown",
+ "serde",
 ]
 
 [[package]]
