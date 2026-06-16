@@ -66,9 +66,10 @@ conversion currently covers a common subset of djot.
 # Filter
 
 `djot-filter` scans a directory of `.dj` / `.djot` files and prints files that
-match all filters:
+match all filters. If no directory is given, it scans the current directory:
 
 ``` sh
+djot-filter --metadata 'title=semantics'
 djot-filter docs --metadata 'title=semantics'
 djot-filter notes --referenced-by index.dj
 djot-filter notes --referenced-by index.dj --direct

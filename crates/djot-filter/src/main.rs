@@ -9,7 +9,7 @@ use regex::Regex;
 fn main() -> ExitCode {
     let config = Config::parse();
 
-    let root = absolute_path(&config.root);
+    let root = default_root(&config);
     let docs = match load_docs(&root) {
         Ok(docs) => docs,
         Err(err) => {
@@ -51,8 +51,8 @@ fn main() -> ExitCode {
     about = "Filter .dj/.djot files under a directory"
 )]
 struct Config {
-    /// Directory to scan recursively.
-    root: PathBuf,
+    /// Directory to scan recursively. Defaults to the current directory.
+    root: Option<PathBuf>,
 
     /// Keep files directly or indirectly referenced by FILE. May be repeated;
     /// the result is the union.
@@ -225,6 +225,10 @@ fn referenced_by_path(root: &Path, path: &Path) -> PathBuf {
     }
 }
 
+fn default_root(config: &Config) -> PathBuf {
+    absolute_path(config.root.as_deref().unwrap_or_else(|| Path::new(".")))
+}
+
 fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -307,6 +311,17 @@ mod tests {
             referenced_by_path(&root, Path::new("nested/../index.dj")),
             root.join("index.dj")
         );
+    }
+
+    #[test]
+    fn root_defaults_to_current_directory() {
+        let config = Config {
+            root: None,
+            referenced_by: Vec::new(),
+            direct: false,
+            metadata_filters: Vec::new(),
+        };
+        assert_eq!(default_root(&config), absolute_path(Path::new(".")));
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {
