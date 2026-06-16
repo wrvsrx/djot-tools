@@ -48,7 +48,7 @@ title = "plan"
 
 The document may begin with a code block carrying the `metadata` class, e.g.
 
-````
+```` djot
 {.metadata}
 ``` toml
 title = "..."
