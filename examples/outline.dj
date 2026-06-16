@@ -1,0 +1,28 @@
+# Outline sample
+
+Exercises `textDocument/documentSymbol`: the symbol tree should nest by
+heading level.
+
+## Getting started
+
+Some text.
+
+### Installation
+
+More text.
+
+### Configuration
+
+More text.
+
+## Usage
+
+Text.
+
+### Basics
+
+Text.
+
+# Appendix
+
+A second top-level heading, sibling of "Outline sample".

@@ -1,0 +1,21 @@
+# Links sample
+
+Exercises `textDocument/definition`. Put the cursor on a link and jump to
+its target.
+
+- Explicit anchor link: [go to Targets](#Targets)
+- Implicit heading reference: [Targets][]
+- Reference link: [the manual][manual]
+- Link to an attributed block: [see the note](#important-note)
+- Cross-file (not resolved yet): [other doc](outline.dj#Usage)
+- External (ignored): [djot](https://djot.net)
+
+[manual]: https://example.com/manual
+
+## Targets
+
+This heading's auto id is `Targets`.
+
+{#important-note}
+This paragraph carries an explicit `{#important-note}` id, so it is a jump
+target too.
