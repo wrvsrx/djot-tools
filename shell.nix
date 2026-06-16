@@ -4,6 +4,7 @@
   rustc,
   nodejs,
   tree-sitter,
+  rustfmt,
 }:
 mkShell {
   nativeBuildInputs = [
@@ -11,5 +12,6 @@ mkShell {
     rustc
     nodejs
     tree-sitter
+    rustfmt
   ];
 }
