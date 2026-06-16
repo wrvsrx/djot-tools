@@ -111,7 +111,9 @@ All binaries reuse `djot-core` without pulling in each other's types.
   string metadata value matching the regex. Dotted keys traverse TOML tables.
 - `--interactive` opens the filtered results in skim. Each item displays and
   outputs the root-relative path, matches against `path + full text`, and uses
-  an in-memory preview of the file content instead of a shell preview command.
+  an in-memory ANSI-highlighted preview of the file content instead of a shell
+  preview command. The item list highlights paths, while search text remains
+  plain `path + full text`.
   When the user accepts a selection, `djot-filter` opens selected files with
   `$EDITOR`; editor arguments are parsed with `shlex` and file paths are passed
   as direct process arguments so spaces are preserved. In skim, `ctrl-n`

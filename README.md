@@ -77,10 +77,11 @@ djot-filter --root notes --metadata 'status=active' --interactive
 seed files. `--direct` restricts that to direct references. `--metadata
 KEY=REGEX` keeps files whose string metadata field matches the regex; it may be
 repeated. `--interactive` opens the filtered results in skim; skim matches
-against each files path and full text, previews the file content, and opens
-the selected files with `EDITOR`. In interactive mode, `ctrl-n` creates a new
-file from the current query, relative to `--root`, adds a `.dj` extension when
-the query has no `.dj` / `.djot` extension, and opens it with `EDITOR`.
+against each files path and full text, previews the file content with basic
+Djot highlighting, and opens the selected files with `EDITOR`. In interactive
+mode, `ctrl-n` creates a new file from the current query, relative to `--root`,
+adds a `.dj` extension when the query has no `.dj` / `.djot` extension, and
+opens it with `EDITOR`.
 
 ## Build
 

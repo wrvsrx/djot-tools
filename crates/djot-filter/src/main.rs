@@ -127,6 +127,7 @@ enum InteractiveAction {
 struct FilterItem {
     path: String,
     searchable: String,
+    display: String,
     preview: String,
 }
 
@@ -134,15 +135,22 @@ impl FilterItem {
     fn new(path: String, text: String) -> Self {
         let searchable = format!("{path}\n{text}");
         let preview = Self::preview_text(&path, &text);
+        let display = ansi_bold(&path);
         Self {
             path,
             searchable,
+            display,
             preview,
         }
     }
 
     fn preview_text(path: &str, text: &str) -> String {
-        format!("{path}\n{}\n{text}", "-".repeat(path.len()))
+        format!(
+            "{}\n{}\n{}",
+            ansi_bold(path),
+            ansi_dim(&"-".repeat(path.len())),
+            highlight_djot_preview(text)
+        )
     }
 }
 
@@ -152,11 +160,11 @@ impl SkimItem for FilterItem {
     }
 
     fn display<'a>(&'a self, _context: DisplayContext<'a>) -> AnsiString<'a> {
-        AnsiString::parse(&self.path)
+        AnsiString::parse(&self.display)
     }
 
     fn preview(&self, _context: PreviewContext) -> ItemPreview {
-        ItemPreview::Text(self.preview.clone())
+        ItemPreview::AnsiText(self.preview.clone())
     }
 
     fn output(&self) -> Cow<'_, str> {
@@ -271,6 +279,70 @@ fn metadata_string<'a>(table: &'a toml::Table, key: &str) -> Option<&'a str> {
         value = value.as_table()?.get(part)?;
     }
     value.as_str()
+}
+
+fn highlight_djot_preview(text: &str) -> String {
+    let mut in_code_block = false;
+    let mut lines = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            lines.push(ansi_color(line, "36"));
+        } else if in_code_block {
+            lines.push(ansi_color(line, "90"));
+        } else if trimmed.starts_with("{.metadata}") {
+            lines.push(ansi_color(line, "35"));
+        } else if trimmed.starts_with('#') {
+            lines.push(ansi_color(line, "1;34"));
+        } else {
+            lines.push(highlight_links(line));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn highlight_links(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('[') {
+        let before = &rest[..open];
+        out.push_str(before);
+        let Some(close_rel) = rest[open..].find(']') else {
+            out.push_str(&rest[open..]);
+            return out;
+        };
+        let close = open + close_rel;
+        let after_close = &rest[close + 1..];
+        if after_close.starts_with('(') {
+            let Some(dst_close) = after_close.find(')') else {
+                out.push_str(&rest[open..]);
+                return out;
+            };
+            let link_end = close + 1 + dst_close + 1;
+            out.push_str(&ansi_color(&rest[open..link_end], "32"));
+            rest = &rest[link_end..];
+        } else {
+            out.push_str(&rest[open..=close]);
+            rest = after_close;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn ansi_bold(text: &str) -> String {
+    ansi_color(text, "1")
+}
+
+fn ansi_dim(text: &str) -> String {
+    ansi_color(text, "2")
+}
+
+fn ansi_color(text: &str, code: &str) -> String {
+    format!("\x1b[{code}m{text}\x1b[0m")
 }
 
 fn run_interactive(
@@ -551,6 +623,19 @@ mod tests {
         let preview = FilterItem::preview_text("notes/topic.dj", "# Topic\nbody text\n");
         assert!(preview.contains("notes/topic.dj"));
         assert!(preview.contains("# Topic"));
+        assert!(preview.contains("\x1b["));
+    }
+
+    #[test]
+    fn preview_highlights_djot_lines_with_ansi() {
+        let preview = highlight_djot_preview(
+            "{.metadata}\n``` toml\ntitle = \"T\"\n```\n# Heading\nSee [next](next.dj)\n",
+        );
+
+        assert!(preview.contains("\x1b[35m{.metadata}\x1b[0m"));
+        assert!(preview.contains("\x1b[36m``` toml\x1b[0m"));
+        assert!(preview.contains("\x1b[1;34m# Heading\x1b[0m"));
+        assert!(preview.contains("\x1b[32m[next](next.dj)\x1b[0m"));
     }
 
     #[test]
