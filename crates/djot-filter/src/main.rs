@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::OpenOptions;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Arc;
@@ -43,8 +44,8 @@ fn main() -> ExitCode {
     paths.sort();
     if config.interactive {
         match run_interactive(&root, &paths, &docs.texts) {
-            Ok(selected) => {
-                if let Err(err) = open_in_editor(&root, &selected) {
+            Ok(action) => {
+                if let Err(err) = handle_interactive_action(&root, action) {
                     eprintln!("djot-filter: {err}");
                     return ExitCode::FAILURE;
                 }
@@ -115,6 +116,11 @@ struct LoadedDocs {
     workspace: Workspace,
     paths: Vec<PathBuf>,
     texts: HashMap<PathBuf, String>,
+}
+
+enum InteractiveAction {
+    Open(Vec<String>),
+    Create(String),
 }
 
 #[derive(Clone)]
@@ -271,11 +277,12 @@ fn run_interactive(
     root: &Path,
     paths: &[PathBuf],
     texts: &HashMap<PathBuf, String>,
-) -> Result<Vec<String>, String> {
+) -> Result<InteractiveAction, String> {
     let options = SkimOptionsBuilder::default()
         .height(Some("100%"))
         .multi(true)
         .preview(Some(""))
+        .bind(vec!["ctrl-n:accept"])
         .build()
         .map_err(|err| err.to_string())?;
     let (sender, receiver): (SkimItemSender, SkimItemReceiver) = unbounded();
@@ -293,14 +300,29 @@ fn run_interactive(
 
     let output = Skim::run_with(&options, Some(receiver));
     let Some(output) = output else {
-        return Ok(Vec::new());
+        return Ok(InteractiveAction::Open(Vec::new()));
     };
+    if output.final_key == Key::Ctrl('n') {
+        return Ok(InteractiveAction::Create(output.query));
+    }
 
-    Ok(output
-        .selected_items
-        .into_iter()
-        .map(|item| item.output().into_owned())
-        .collect())
+    Ok(InteractiveAction::Open(
+        output
+            .selected_items
+            .into_iter()
+            .map(|item| item.output().into_owned())
+            .collect(),
+    ))
+}
+
+fn handle_interactive_action(root: &Path, action: InteractiveAction) -> Result<(), String> {
+    match action {
+        InteractiveAction::Open(selected) => open_in_editor(root, &selected),
+        InteractiveAction::Create(name) => {
+            let path = create_file_from_query(root, &name)?;
+            open_paths_in_editor(&[path])
+        }
+    }
 }
 
 fn open_in_editor(root: &Path, selected: &[String]) -> Result<(), String> {
@@ -308,10 +330,18 @@ fn open_in_editor(root: &Path, selected: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
+    let paths = editor_paths(root, selected);
+    open_paths_in_editor(&paths)
+}
+
+fn open_paths_in_editor(paths: &[PathBuf]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
     let editor = std::env::var("EDITOR")
         .map_err(|_| "--interactive selected files, but EDITOR is not set".to_string())?;
     let (program, args) = editor_command(&editor)?;
-    let paths = editor_paths(root, selected);
     let status = Command::new(&program)
         .args(args)
         .args(paths)
@@ -323,6 +353,29 @@ fn open_in_editor(root: &Path, selected: &[String]) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn create_file_from_query(root: &Path, query: &str) -> Result<PathBuf, String> {
+    let name = query.trim();
+    if name.is_empty() {
+        return Err("cannot create a file from an empty query".to_string());
+    }
+
+    let path = normalize(&root.join(name));
+    if !path.starts_with(root) {
+        return Err(format!("new file path escapes root: {name}"));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("cannot create directory {}: {err}", parent.display()))?;
+    }
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| format!("cannot create {}: {err}", path.display()))?;
+
+    Ok(path)
 }
 
 fn editor_command(editor: &str) -> Result<(String, Vec<String>), String> {
@@ -507,6 +560,29 @@ mod tests {
         let root = normalize(Path::new("/tmp/djot-filter-root"));
         let paths = editor_paths(&root, &["other file.dj".to_string()]);
         assert_eq!(paths, vec![root.join("other file.dj")]);
+    }
+
+    #[test]
+    fn create_file_from_query_creates_root_relative_file() {
+        let root = unique_test_dir("djot-filter-create-test");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let path = create_file_from_query(&root, "notes/other file.dj").unwrap();
+        assert_eq!(path, root.join("notes/other file.dj"));
+        assert!(path.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn create_file_from_query_rejects_empty_or_escaping_path() {
+        let root = unique_test_dir("djot-filter-create-reject-test");
+        std::fs::create_dir_all(&root).unwrap();
+
+        assert!(create_file_from_query(&root, "  ").is_err());
+        assert!(create_file_from_query(&root, "../outside.dj").is_err());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {

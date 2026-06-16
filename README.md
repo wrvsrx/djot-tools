@@ -78,7 +78,8 @@ seed files. `--direct` restricts that to direct references. `--metadata
 KEY=REGEX` keeps files whose string metadata field matches the regex; it may be
 repeated. `--interactive` opens the filtered results in skim; skim matches
 against each files path and full text, previews the file content, and opens
-the selected files with `EDITOR`.
+the selected files with `EDITOR`. In interactive mode, `ctrl-n` creates a new
+file from the current query, relative to `--root`, and opens it with `EDITOR`.
 
 ## Build
 

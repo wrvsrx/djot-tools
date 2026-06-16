@@ -114,7 +114,9 @@ All binaries reuse `djot-core` without pulling in each other's types.
   an in-memory preview of the file content instead of a shell preview command.
   When the user accepts a selection, `djot-filter` opens selected files with
   `$EDITOR`; editor arguments are parsed with `shlex` and file paths are passed
-  as direct process arguments so spaces are preserved.
+  as direct process arguments so spaces are preserved. In skim, `ctrl-n`
+  creates a new file from the current query relative to the scan root, rejects
+  empty or root-escaping paths, and opens the created file with `$EDITOR`.
 - Unit tests live in the same file and cover metadata filtering, transitive
   references, dotted metadata keys, seed path normalization, and skim item
   behavior.
