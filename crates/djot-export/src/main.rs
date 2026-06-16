@@ -47,10 +47,45 @@ fn main() -> ExitCode {
 fn to_pandoc_json(text: &str) -> Value {
     json!({
         "pandoc-api-version": API_VERSION,
-        // TODO: fold djot_core::metadata_block(text) (toml) into pandoc Meta.
-        "meta": {},
+        "meta": build_meta(text),
         "blocks": convert_blocks(text),
     })
+}
+
+/// Fold the leading `{.metadata}` toml block into a pandoc `Meta` map. The block
+/// stays out of the rendered body (see `convert_blocks`); this is where its
+/// information is preserved instead of dropped.
+fn build_meta(text: &str) -> Value {
+    let table = djot_core::metadata_block(text)
+        .and_then(|toml_src| toml::from_str::<toml::Table>(&toml_src).ok());
+    match table {
+        Some(table) => Value::Object(
+            table
+                .iter()
+                .map(|(key, value)| (key.clone(), toml_to_meta(value)))
+                .collect(),
+        ),
+        None => json!({}),
+    }
+}
+
+/// Convert a toml value into a pandoc `MetaValue` JSON node.
+fn toml_to_meta(value: &toml::Value) -> Value {
+    match value {
+        toml::Value::String(s) => json!({ "t": "MetaString", "c": s }),
+        toml::Value::Boolean(b) => json!({ "t": "MetaBool", "c": b }),
+        toml::Value::Integer(n) => json!({ "t": "MetaString", "c": n.to_string() }),
+        toml::Value::Float(n) => json!({ "t": "MetaString", "c": n.to_string() }),
+        toml::Value::Datetime(d) => json!({ "t": "MetaString", "c": d.to_string() }),
+        toml::Value::Array(items) => json!({
+            "t": "MetaList",
+            "c": items.iter().map(toml_to_meta).collect::<Vec<_>>(),
+        }),
+        toml::Value::Table(table) => json!({
+            "t": "MetaMap",
+            "c": table.iter().map(|(k, v)| (k.clone(), toml_to_meta(v))).collect::<serde_json::Map<_, _>>(),
+        }),
+    }
 }
 
 /// What a finished frame contributes to its parent.
@@ -262,6 +297,15 @@ mod tests {
         let ast = to_pandoc_json("# Hi\n");
         assert_eq!(ast["pandoc-api-version"], json!([1, 23, 1, 1]));
         assert!(ast["blocks"].is_array());
+    }
+
+    #[test]
+    fn metadata_is_folded_into_meta_not_dropped() {
+        let ast = to_pandoc_json("{.metadata}\n``` toml\ntitle = \"X\"\ndraft = true\n```\n\n# H\n");
+        assert_eq!(ast["meta"]["title"], json!({ "t": "MetaString", "c": "X" }));
+        assert_eq!(ast["meta"]["draft"], json!({ "t": "MetaBool", "c": true }));
+        // The block is folded into meta, so the body holds only the "# H" section.
+        assert_eq!(ast["blocks"].as_array().unwrap().len(), 1);
     }
 
     #[test]

@@ -8,3 +8,4 @@ license.workspace = true
 djot-core = { path = "../djot-core" }
 jotdown.workspace = true
 serde_json = "1"
+toml = "1.1.2"
