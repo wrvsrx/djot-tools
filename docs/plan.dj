@@ -13,7 +13,7 @@ title = "plan"
 
 - [ ] `textDocument/definition`
 
-  - [ ] jump to link in the same file
+  - [x] jump to link in the same file
   - [ ] jump to link in another file
 
 - [ ] `textDocument/hover`
