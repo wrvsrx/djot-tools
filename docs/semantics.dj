@@ -1,0 +1,117 @@
+{.metadata}
+``` toml
+title = "semantics"
+```
+
+# Djot language server semantics
+
+This document records the conventions that `djot-ls` layers on top of Djot
+syntax. They are project semantics, not additions to the Djot syntax itself.
+Other Djot tools may parse the same source without applying these rules.
+
+# Djot documents
+
+Files ending in `.dj` or `.djot` are Djot documents.
+
+Workspace-wide semantics use the LSP workspace root supplied by the client.
+During initialization, `djot-ls` indexes `.dj` and `.djot` files under that
+root. Without a workspace root, only opened buffers and lazily loaded target
+documents are known.
+
+# Metadata
+
+A document may begin with a code block carrying the `metadata` class:
+
+```` djot
+{.metadata}
+``` toml
+title = "Usage Guide"
+author = "wrvsrx"
+date = "2026-06-16"
+```
+````
+
+Only a leading classed code block is document metadata. A normal code block, or
+a `{.metadata}` block after body content, is ordinary document content.
+
+The metadata block body is TOML. Current semantic fields are intentionally
+minimal:
+
+- `title`: the document title used by tools that need a human-facing document
+  name.
+
+`djot-export` folds this TOML into pandoc metadata instead of rendering the
+block as body content.
+
+# Anchors
+
+An anchor is any Djot element with an id.
+
+Headings define anchors using jotdown's heading id:
+
+``` djot
+# Usage Guide
+```
+
+This heading can be referenced as `#Usage-Guide`.
+
+Any other element with an explicit `{#id}` attribute also defines an anchor:
+
+``` djot
+{#important-note}
+This paragraph is a target.
+```
+
+Anchor ids are matched exactly. `#Conclusion` and `#conclusion` are different
+targets.
+
+If multiple elements define the same id in one document, the first indexed
+definition wins. Duplicate-anchor diagnostics are not currently part of the
+semantics.
+
+# References
+
+A reference is a link whose destination names a Djot semantic target.
+
+`djot-ls` classifies link destinations as follows:
+
+- `#id`: an anchor in the same document.
+- `path.dj`: another Djot document.
+- `path.dj#id`: an anchor in another Djot document.
+- `path.djot` and `path.djot#id`: the same rules for `.djot` files.
+- URL-like destinations such as `https://...` and `mailto:...`: external links.
+- Other paths such as `README.md`, `LICENSE`, or `crates/djot-core`: ordinary
+  non-Djot links.
+
+Relative Djot paths are resolved from the directory of the source document and
+normalized lexically, including `.` and `..`.
+
+Inline links, reference links, and implicit links are treated uniformly after
+jotdown resolves them to a destination string.
+
+# Target Resolution
+
+For Djot semantic references:
+
+- `#id` resolves to `(current document, id)`.
+- `path.dj` resolves to the target document itself.
+- `path.dj#id` resolves to `(target document, id)`.
+- URL-like destinations do not resolve to Djot targets.
+- Non-Djot paths do not resolve to Djot targets.
+
+File-only Djot references name a document, not an anchor. They can be used for
+file navigation, but they do not participate in anchor reference queries.
+
+# Diagnostics
+
+Diagnostics are emitted only for unresolved Djot semantic references:
+
+- missing same-document anchors (`#id`)
+- missing `.dj` or `.djot` target files
+- missing anchors in `.dj` or `.djot` target files
+
+Diagnostics are not emitted for external URLs, non-Djot file links, or directory
+links.
+
+Because cross-file diagnostics depend on the workspace index, they are most
+complete when the LSP client supplies a workspace root.
