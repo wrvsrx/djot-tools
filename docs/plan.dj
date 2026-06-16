@@ -25,12 +25,12 @@ title = "plan"
   - [ ] unresolved internal anchors
   - [ ] unresolved cross-file anchors / paths
 
-- [ ] `textDocument/completion`
+- [x] `textDocument/completion`
 
   - [x] `[` trigger: fuzzy-search workspace files by path and metadata
     `title`, then insert `[title](path)`
   - [x] destination path trigger: complete paths inside `[text](path)`
-  - [ ] destination anchor trigger: complete anchors inside `[text](path#anchor)`
+  - [x] destination anchor trigger: complete anchors inside `[text](path#anchor)`
   - [x] completion context parser: first require the cursor to touch a jotdown
     `Str` event outside verbatim/code/link containers, then use a small parser
     for incomplete link syntax

@@ -8,7 +8,7 @@ use async_lsp::router::Router;
 use async_lsp::server::LifecycleLayer;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ClientSocket, LanguageServer, ResponseError};
-use djot_core::{heading_outline, metadata_block, resolve_target, Heading, Workspace};
+use djot_core::{heading_outline, metadata_block, resolve_target, Heading, RefTarget, Workspace};
 use futures::future::BoxFuture;
 use jotdown::{Container, Event, Parser};
 use lsp_types::{
@@ -410,6 +410,7 @@ impl ServerState {
                         ),
                         &entry.text,
                         &replace,
+                        CompletionItemKind::FILE,
                     )
                 })
                 .collect(),
@@ -426,6 +427,26 @@ impl ServerState {
                         escape_link_destination(&target.path),
                         &entry.text,
                         &replace,
+                        CompletionItemKind::FILE,
+                    )
+                })
+                .collect(),
+            LinkCompletionContext::Anchor {
+                path,
+                replace,
+                query,
+            } => self
+                .anchor_completions(&from, &path)?
+                .into_iter()
+                .filter(|anchor| fuzzy_match(&query, &anchor.id))
+                .map(|anchor| {
+                    completion_item(
+                        anchor.id.clone(),
+                        Some(anchor.path.clone()),
+                        escape_link_destination(&anchor.id),
+                        &entry.text,
+                        &replace,
+                        CompletionItemKind::REFERENCE,
                     )
                 })
                 .collect(),
@@ -454,6 +475,42 @@ impl ServerState {
         targets
     }
 
+    fn anchor_completions(&self, from: &Path, link_path: &str) -> Option<Vec<AnchorCompletion>> {
+        let target_path = if link_path.is_empty() {
+            from.to_path_buf()
+        } else {
+            resolve_target(
+                from,
+                &RefTarget::External {
+                    path: link_path.to_string(),
+                    id: None,
+                },
+            )?
+            .path
+        };
+
+        let entry = self.workspace.get(&target_path)?;
+        let display_path = relative_link_path(from, &target_path).unwrap_or_else(|| {
+            self.workspace_roots
+                .iter()
+                .find_map(|root| target_path.strip_prefix(root).ok())
+                .unwrap_or(&target_path)
+                .display()
+                .to_string()
+        });
+        let mut anchors: Vec<_> = entry
+            .index
+            .anchors
+            .keys()
+            .map(|id| AnchorCompletion {
+                id: id.clone(),
+                path: display_path.clone(),
+            })
+            .collect();
+        anchors.sort_by(|a, b| a.id.to_lowercase().cmp(&b.id.to_lowercase()));
+        Some(anchors)
+    }
+
     fn display_path(&self, path: &Path) -> String {
         self.workspace_roots
             .iter()
@@ -470,6 +527,12 @@ struct LinkTargetCompletion {
     path: String,
 }
 
+#[derive(Debug, Clone)]
+struct AnchorCompletion {
+    id: String,
+    path: String,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum LinkCompletionContext {
     Label {
@@ -477,6 +540,11 @@ enum LinkCompletionContext {
         query: String,
     },
     Destination {
+        replace: ByteRange<usize>,
+        query: String,
+    },
+    Anchor {
+        path: String,
         replace: ByteRange<usize>,
         query: String,
     },
@@ -491,6 +559,11 @@ enum LinkScanState {
 }
 
 fn link_completion_context(text: &str, offset: usize) -> Option<LinkCompletionContext> {
+    incomplete_link_completion_context(text, offset)
+        .or_else(|| closed_link_anchor_completion_context(text, offset))
+}
+
+fn incomplete_link_completion_context(text: &str, offset: usize) -> Option<LinkCompletionContext> {
     let str_span = str_event_touching_cursor(text, offset)?;
     let prefix = &text[str_span.start..offset];
     let mut state = LinkScanState::Text;
@@ -546,8 +619,12 @@ fn link_completion_context(text: &str, offset: usize) -> Option<LinkCompletionCo
         }),
         LinkScanState::Destination { start } => {
             let query = &text[start..offset];
-            if query.contains('#') {
-                None
+            if let Some((path, anchor_query)) = query.split_once('#') {
+                Some(LinkCompletionContext::Anchor {
+                    path: path.to_string(),
+                    replace: start + path.len() + '#'.len_utf8()..offset,
+                    query: anchor_query.to_string(),
+                })
             } else {
                 Some(LinkCompletionContext::Destination {
                     replace: start..offset,
@@ -557,6 +634,44 @@ fn link_completion_context(text: &str, offset: usize) -> Option<LinkCompletionCo
         }
         LinkScanState::Text | LinkScanState::AfterLabel => None,
     }
+}
+
+fn closed_link_anchor_completion_context(
+    text: &str,
+    offset: usize,
+) -> Option<LinkCompletionContext> {
+    Parser::new(text)
+        .into_offset_iter()
+        .find_map(|(event, span)| match event {
+            Event::End(Container::Link(dst, _)) if span.start <= offset && offset <= span.end => {
+                closed_link_anchor_from_end_span(text, span, dst.as_ref(), offset)
+            }
+            _ => None,
+        })
+}
+
+fn closed_link_anchor_from_end_span(
+    text: &str,
+    span: ByteRange<usize>,
+    dst: &str,
+    offset: usize,
+) -> Option<LinkCompletionContext> {
+    let hash_in_dst = dst.find('#')?;
+    let syntax = &text[span.clone()];
+    let dst_in_syntax = syntax.find(dst)?;
+    let dst_start = span.start + dst_in_syntax;
+    let fragment_start = dst_start + hash_in_dst + '#'.len_utf8();
+    let dst_end = dst_start + dst.len();
+
+    if offset < fragment_start || offset > dst_end {
+        return None;
+    }
+
+    Some(LinkCompletionContext::Anchor {
+        path: dst[..hash_in_dst].to_string(),
+        replace: fragment_start..offset,
+        query: text[fragment_start..offset].to_string(),
+    })
 }
 
 fn label_completion_replace_end(text: &str, offset: usize, limit: usize) -> usize {
@@ -622,10 +737,11 @@ fn completion_item(
     new_text: String,
     source_text: &str,
     replace: &ByteRange<usize>,
+    kind: CompletionItemKind,
 ) -> CompletionItem {
     CompletionItem {
         label,
-        kind: Some(CompletionItemKind::FILE),
+        kind: Some(kind),
         detail,
         text_edit: Some(CompletionTextEdit::Edit(TextEdit::new(
             byte_range_to_lsp(source_text, replace),
