@@ -65,6 +65,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "djot-export"
+version = "0.1.0"
+dependencies = [
+ "djot-core",
+ "jotdown",
+ "serde_json",
+]
+
+[[package]]
 name = "djot-ls"
 version = "0.1.0"
 dependencies = [

@@ -8,7 +8,12 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use jotdown::{Container, Event, Parser};
+use jotdown::{Attributes, Container, Event, Parser};
+
+/// The class that marks a leading code block as document metadata. This is a
+/// djot-ls / djot-export convention layered on djot's native attribute syntax,
+/// not part of djot itself — other djot tools simply see a classed code block.
+pub const METADATA_CLASS: &str = "metadata";
 
 /// A heading node in the document outline.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +168,31 @@ pub fn build_index(text: &str) -> DocIndex {
     }
 }
 
+/// Whether a djot element's attributes include the given class.
+pub fn has_class(attrs: &Attributes, class: &str) -> bool {
+    attrs
+        .get_value("class")
+        .is_some_and(|v| v.to_string().split_whitespace().any(|c| c == class))
+}
+
+/// Return the raw text of the document's first `{.metadata}`-classed code block,
+/// if any. This is the shared primitive behind metadata hover and export.
+pub fn metadata_block(text: &str) -> Option<String> {
+    let mut content = String::new();
+    let mut in_meta = false;
+    for (event, _) in Parser::new(text).into_offset_iter() {
+        match event {
+            Event::Start(Container::CodeBlock { .. }, attrs) if has_class(&attrs, METADATA_CLASS) => {
+                in_meta = true;
+            }
+            Event::Str(s) if in_meta => content.push_str(&s),
+            Event::End(Container::CodeBlock { .. }) if in_meta => return Some(content),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Classify a link destination string into a [`RefTarget`].
 pub fn parse_dst(dst: &str) -> RefTarget {
     if dst.contains("://") || dst.starts_with("mailto:") {
@@ -248,6 +278,14 @@ mod tests {
             path: "o.dj".into(),
             id: Some("s".into()),
         }));
+    }
+
+    #[test]
+    fn metadata_block_extracts_leading_toml() {
+        let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# H\n";
+        assert_eq!(metadata_block(text).as_deref(), Some("title = \"x\"\n"));
+        // A plain code block is not metadata.
+        assert_eq!(metadata_block("``` toml\ntitle = \"x\"\n```\n"), None);
     }
 
     #[test]

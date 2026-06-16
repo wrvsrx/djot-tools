@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/djot-core", "crates/djot-ls"]
+members = ["crates/djot-core", "crates/djot-ls", "crates/djot-export"]
 
 [workspace.package]
 version = "0.1.0"

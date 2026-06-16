@@ -33,6 +33,20 @@ More capabilities (cross-file definition, backlinks, diagnostics, completion,
 semantic tokens) are planned -- see [`docs/plan.dj`](docs/plan.dj) for the
 roadmap.
 
+# Export
+
+`djot-export` converts a djot document to a [pandoc](https://pandoc.org) JSON
+AST, so you can hand it to pandoc for further conversion:
+
+``` sh
+djot-export doc.dj | pandoc -f json -o doc.pdf
+```
+
+Document conventions become export transformations here: a leading
+`{.metadata}` toml block is lifted out of the rendered body (eventually folded
+into pandoc metadata) rather than printed as a code block. The djot-to-pandoc
+conversion currently covers a common subset of djot.
+
 # Build
 
 ``` sh
@@ -67,14 +81,16 @@ advertises `documentSymbol` and `definition` support during `initialize`.
 
 # Architecture
 
-A Cargo workspace with two crates:
+A Cargo workspace with three crates:
 
 - [`crates/djot-core`](crates/djot-core) -- protocol-agnostic djot analysis
-  (heading outline, anchor/reference index) working purely in byte offsets. No
-  LSP or pandoc types, so it can be shared by other tools (a djot-to-pandoc
-  exporter is planned).
+  (heading outline, anchor/reference index, metadata-block extraction) working
+  purely in byte offsets. No LSP or pandoc types, so it is shared by the other
+  crates.
 - [`crates/djot-ls`](crates/djot-ls) -- the `djot-ls` LSP binary; it depends on
   `djot-core` and converts its byte-offset results to LSP types.
+- [`crates/djot-export`](crates/djot-export) -- the `djot-export` CLI; it
+  depends on `djot-core` and converts djot to a pandoc JSON AST.
 
 For the design rationale (the async-lsp `&mut self`/no-lock state model, the
 core/LSP boundary) and project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
