@@ -1,4 +1,5 @@
 use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
 
 use async_lsp::client_monitor::ClientProcessMonitorLayer;
 use async_lsp::concurrency::ConcurrencyLayer;
@@ -27,6 +28,8 @@ struct ServerState {
     /// Parsed documents, keyed by file path. Open buffers are inserted on
     /// did_open/did_change; cross-file link targets are loaded from disk lazily.
     workspace: Workspace,
+    /// Roots supplied by the LSP client during initialize.
+    workspace_roots: Vec<PathBuf>,
 }
 
 impl LanguageServer for ServerState {
@@ -35,8 +38,13 @@ impl LanguageServer for ServerState {
 
     fn initialize(
         &mut self,
-        _params: InitializeParams,
+        params: InitializeParams,
     ) -> BoxFuture<'static, Result<InitializeResult, Self::Error>> {
+        self.workspace_roots = workspace_roots(&params);
+        for root in self.workspace_roots.clone() {
+            self.index_workspace_root(&root);
+        }
+
         Box::pin(async move {
             Ok(InitializeResult {
                 capabilities: ServerCapabilities {
@@ -72,9 +80,19 @@ impl LanguageServer for ServerState {
     }
 
     fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Self::NotifyResult {
-        // Drop the buffer; a later cross-file lookup re-reads it from disk.
         if let Ok(path) = params.text_document.uri.to_file_path() {
-            self.workspace.remove(&path);
+            // Drop the open-buffer text. For workspace files, keep the disk
+            // version indexed so cross-file lookups and references remain
+            // available after the editor closes the buffer.
+            if self.is_in_workspace(&path) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    self.workspace.insert(path, text);
+                } else {
+                    self.workspace.remove(&path);
+                }
+            } else {
+                self.workspace.remove(&path);
+            }
         }
         ControlFlow::Continue(())
     }
@@ -120,6 +138,16 @@ impl LanguageServer for ServerState {
 }
 
 impl ServerState {
+    fn index_workspace_root(&mut self, root: &Path) {
+        index_djot_files(root, &mut |path, text| {
+            self.workspace.insert(path, text);
+        });
+    }
+
+    fn is_in_workspace(&self, path: &Path) -> bool {
+        self.workspace_roots.iter().any(|root| path.starts_with(root))
+    }
+
     /// Resolve goto-definition for the link under `position` in `uri`. Same-file
     /// `#id` links and cross-file `path#id` links are handled uniformly through
     /// the workspace index; a cross-file target not yet indexed is loaded from
@@ -240,6 +268,7 @@ async fn main() {
             .service(Router::from_language_server(ServerState {
                 client,
                 workspace: Workspace::new(),
+                workspace_roots: Vec::new(),
             }))
     });
 
@@ -254,4 +283,48 @@ async fn main() {
     let stdout = async_lsp::stdio::PipeStdout::lock_tokio().unwrap();
 
     server.run_buffered(stdin, stdout).await.unwrap();
+}
+
+fn workspace_roots(params: &InitializeParams) -> Vec<PathBuf> {
+    if let Some(folders) = &params.workspace_folders {
+        folders
+            .iter()
+            .filter_map(|folder| folder.uri.to_file_path().ok())
+            .collect()
+    } else {
+        #[allow(deprecated)]
+        params
+            .root_uri
+            .as_ref()
+            .and_then(|uri| uri.to_file_path().ok())
+            .into_iter()
+            .collect()
+    }
+}
+
+fn index_djot_files(root: &Path, insert: &mut impl FnMut(PathBuf, String)) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+
+        if file_type.is_dir() {
+            index_djot_files(&path, insert);
+        } else if file_type.is_file() && is_djot_file(&path) {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                insert(path, text);
+            }
+        }
+    }
+}
+
+fn is_djot_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext == "dj" || ext == "djot")
 }
