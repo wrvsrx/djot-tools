@@ -223,6 +223,11 @@ fn convert_blocks(text: &str) -> Vec<Value> {
             }
             Event::Softbreak => push_inline(&mut stack, json!({ "t": "SoftBreak" })),
             Event::Hardbreak => push_inline(&mut stack, json!({ "t": "LineBreak" })),
+            // Smart punctuation: emit the resolved character as text.
+            Event::EnDash => push_inline(&mut stack, str_node("\u{2013}")),
+            Event::EmDash => push_inline(&mut stack, str_node("\u{2014}")),
+            Event::Ellipsis => push_inline(&mut stack, str_node("\u{2026}")),
+            Event::NonBreakingSpace => push_inline(&mut stack, str_node("\u{a0}")),
             Event::ThematicBreak(_) => {
                 if let Some(top) = stack.last_mut() {
                     top.children.push(json!({ "t": "HorizontalRule" }));
@@ -234,6 +239,10 @@ fn convert_blocks(text: &str) -> Vec<Value> {
     }
 
     roots
+}
+
+fn str_node(s: &str) -> Value {
+    json!({ "t": "Str", "c": s })
 }
 
 fn push_inline(stack: &mut [Frame], node: Value) {
@@ -262,6 +271,19 @@ mod tests {
         let inner = &blocks[0]["c"][1];
         assert_eq!(inner[0]["t"], "Header");
         assert_eq!(inner[0]["c"][0], 1);
+    }
+
+    #[test]
+    fn smart_punctuation_becomes_text() {
+        let blocks = convert_blocks("a -- b ... c\n");
+        let text: String = blocks[0]["c"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|n| n["c"].as_str())
+            .collect();
+        assert!(text.contains('\u{2013}'), "en dash"); // --
+        assert!(text.contains('\u{2026}'), "ellipsis"); // ...
     }
 
     #[test]

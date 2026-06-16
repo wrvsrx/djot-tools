@@ -7,8 +7,8 @@ A [Language Server](https://microsoft.github.io/language-server-protocol/) for
 
 The binary is `djot-ls`. It handles `.dj` / `.djot` files.
 
-*This README is generated from `README.dj`:*
-`pandoc -f djot -t gfm --lua-filter=dev/strip-sections.lua README.dj -o README.md`
+*This README is generated from `README.dj` with this projects own exporter:*
+`djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/strip-sections.lua > README.md`
 
 # Features
 
