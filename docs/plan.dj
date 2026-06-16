@@ -16,8 +16,9 @@ title = "plan"
   - [x] jump to link in the same file
   - [x] jump to link in another file
 
-- [ ] `textDocument/hover`
+- [x] `textDocument/hover`
 
+  - [x] links/anchors: show target kind, id, path:line, and source preview
   - [ ] metadata: parse a `{.metadata}`-classed toml block at the top of the
     document and show its fields as hover content
 

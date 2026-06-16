@@ -13,8 +13,9 @@ use futures::future::BoxFuture;
 use lsp_types::{
     DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
-    InitializeResult, InitializedParams, Location, NumberOrString, OneOf, Position, ProgressParams,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
+    Location, MarkupContent, MarkupKind, NumberOrString, OneOf, Position, ProgressParams,
     ProgressParamsValue, Range, ReferenceParams, ServerCapabilities, SymbolKind,
     TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkDoneProgress, WorkDoneProgressBegin,
     WorkDoneProgressEnd, WorkDoneProgressReport,
@@ -54,6 +55,7 @@ impl LanguageServer for ServerState {
                     document_symbol_provider: Some(OneOf::Left(true)),
                     definition_provider: Some(OneOf::Left(true)),
                     references_provider: Some(OneOf::Left(true)),
+                    hover_provider: Some(HoverProviderCapability::Simple(true)),
                     ..ServerCapabilities::default()
                 },
                 server_info: None,
@@ -157,6 +159,15 @@ impl LanguageServer for ServerState {
             params.context.include_declaration,
         );
         Box::pin(async move { Ok(locations) })
+    }
+
+    fn hover(
+        &mut self,
+        params: HoverParams,
+    ) -> BoxFuture<'static, Result<Option<Hover>, Self::Error>> {
+        let pos = params.text_document_position_params;
+        let hover = self.resolve_hover(&pos.text_document.uri, pos.position);
+        Box::pin(async move { Ok(hover) })
     }
 }
 
@@ -289,6 +300,68 @@ impl ServerState {
         let target = resolve_target(path, &reference.target)?;
         target.id.map(|id| (target.path, id))
     }
+
+    fn resolve_hover(&self, uri: &Url, position: Position) -> Option<Hover> {
+        let from = uri.to_file_path().ok()?;
+        let offset = position_to_offset(&self.workspace.get(&from)?.text, position);
+        let (target_path, target_id) = self.reference_target_at(&from, offset)?;
+        let entry = self.workspace.get(&target_path)?;
+        let anchor = entry.index.anchors.get(&target_id)?;
+        let range = byte_range_to_lsp(&entry.text, &anchor.range);
+
+        Some(Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: anchor_hover_markdown(
+                    self.display_path(&target_path),
+                    &target_id,
+                    &entry.text,
+                    &anchor.range,
+                ),
+            }),
+            range: Some(range),
+        })
+    }
+
+    fn display_path(&self, path: &Path) -> String {
+        self.workspace_roots
+            .iter()
+            .find_map(|root| path.strip_prefix(root).ok())
+            .unwrap_or(path)
+            .display()
+            .to_string()
+    }
+}
+
+fn anchor_hover_markdown(
+    display_path: String,
+    id: &str,
+    text: &str,
+    range: &std::ops::Range<usize>,
+) -> String {
+    let kind = if text[range.clone()].trim_start().starts_with('#') {
+        "Heading"
+    } else {
+        "Anchor"
+    };
+    let line = offset_to_position(text, range.start).line + 1;
+    let preview = source_line_at(text, range.start).trim_end();
+    format!(
+        "**{kind}** `{}`\n\n`{}:{line}`\n\n```djot\n{}\n```",
+        escape_markdown_code(id),
+        escape_markdown_code(&display_path),
+        preview
+    )
+}
+
+fn source_line_at(text: &str, offset: usize) -> &str {
+    let start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let end = text[offset..].find('\n').map_or(text.len(), |i| offset + i);
+    &text[start..end]
+}
+
+fn escape_markdown_code(value: &str) -> String {
+    value.replace('`', "\\`")
 }
 
 /// Convert a core [`Heading`] (byte offsets) into an LSP `DocumentSymbol`.

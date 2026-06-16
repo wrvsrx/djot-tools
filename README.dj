@@ -39,6 +39,11 @@ from `workspaceFolders` (or `rootUri` as a fallback) after initialization,
 reports indexing progress with `$/progress`, and keeps open buffers overriding
 the disk index while they are edited.
 
+## `textDocument/hover`
+
+Shows the target for a link or anchor under the cursor: target kind, anchor id,
+relative path and line, and a short djot source preview.
+
 Document sync is full-text.
 
 More capabilities (diagnostics, completion, semantic tokens) are

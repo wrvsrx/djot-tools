@@ -8,7 +8,7 @@ instructions.
 
 ## What this is
 
-A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → references → hover → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings), `textDocument/definition` (same-file and cross-file links), and `textDocument/references` (backlinks) are implemented.
+A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → references → hover → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings), `textDocument/definition` (same-file and cross-file links), `textDocument/references` (backlinks), and `textDocument/hover` (target information) are implemented.
 
 This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that converts djot to a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`).
 
@@ -76,7 +76,7 @@ Both binaries reuse `djot-core` without pulling in each other's types.
 
 - `heading_outline(text) -> Vec<Heading>` builds a **nested** outline. jotdown wraps each heading in a `Section` container that nests by level, so it walks the section `Start`/`End` events with a stack — the section span is `Heading::range`, the heading line is `selection_range`, nested sections become `children`. A `captured` flag stops headings inside non-section blocks (e.g. a blockquote) from overwriting a section's title.
 - `build_index(text) -> DocIndex` collects `anchors` (heading/section ids plus any `{#id}` attribute → byte range) and `references` (every link → byte span + a `RefTarget` classified by `parse_dst`: `Internal #id` / `External path#id` / `Url`). jotdown resolves inline/reference/implicit links all to one destination string, so references are uniform.
-- `metadata_block(text) -> Option<String>` returns the raw toml of a leading `{.metadata}` code block; `has_class` / `METADATA_CLASS` are the shared primitives for that convention (used by both the planned hover and `djot-export`).
+- `metadata_block(text) -> Option<String>` returns the raw toml of a leading `{.metadata}` code block; `has_class` / `METADATA_CLASS` are the shared primitives for that convention (used by the planned metadata hover and `djot-export`).
 - `resolve_target(from, target)` normalizes internal and relative cross-file
   targets; URLs deliberately return `None`.
 - `Workspace` stores parsed documents by normalized path, supports active-buffer
@@ -101,13 +101,14 @@ Both binaries reuse `djot-core` without pulling in each other's types.
   reparses the whole document into the workspace; `did_close` restores the
   disk-indexed version for workspace files and removes non-workspace buffers.
 - Advertised capabilities are currently `textDocument/documentSymbol`,
-  `textDocument/definition`, and `textDocument/references`.
+  `textDocument/definition`, `textDocument/references`, and
+  `textDocument/hover`.
 - `initialize` records client-provided `workspaceFolders`, falling back to
   `rootUri` for older clients. `initialized` then indexes `.dj` / `.djot` files
   under those roots and reports work-done progress with `$/progress`. With no
   client root, it indexes only opened buffers and lazily loaded definition
   targets.
-- `document_symbol` calls `heading_outline` on the stored text then maps each `Heading` to `DocumentSymbol`; `definition` (`resolve_definition`) hit-tests the cursor against link spans via the workspace, `resolve_target`s the link, lazily loads a cross-file target from disk if unseen, and returns the anchor's `Location`. Same-file and cross-file links go through the same path; external URLs return nothing. `references` resolves either the anchor or link under the cursor, then returns locations from `Workspace::references_to`, optionally including the anchor declaration.
+- `document_symbol` calls `heading_outline` on the stored text then maps each `Heading` to `DocumentSymbol`; `definition` (`resolve_definition`) hit-tests the cursor against link spans via the workspace, `resolve_target`s the link, lazily loads a cross-file target from disk if unseen, and returns the anchor's `Location`. Same-file and cross-file links go through the same path; external URLs return nothing. `references` resolves either the anchor or link under the cursor, then returns locations from `Workspace::references_to`, optionally including the anchor declaration. `hover` resolves the anchor or link under the cursor and shows target kind, id, path:line, and a djot source preview.
 - `offset_to_position`/`position_to_offset` convert between byte offsets and LSP `Position` (UTF-16 columns) — O(n) per call, fine for now, worth precomputing line starts if it shows up in profiles.
 - `main()` wires the tower middleware stack (`Tracing`/`Lifecycle`/`CatchUnwind`/`Concurrency`/`ClientProcessMonitor`) around the router and runs `run_buffered` over real async stdio (`PipeStdin/PipeStdout::lock_tokio`). Tracing goes to **stderr** (stdout is the LSP transport).
 
