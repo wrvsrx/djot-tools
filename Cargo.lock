@@ -58,12 +58,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "djot-language-server"
+name = "djot-core"
+version = "0.1.0"
+dependencies = [
+ "jotdown",
+]
+
+[[package]]
+name = "djot-ls"
 version = "0.1.0"
 dependencies = [
  "async-lsp",
+ "djot-core",
  "futures",
- "jotdown",
  "lsp-types",
  "serde_json",
  "tokio",

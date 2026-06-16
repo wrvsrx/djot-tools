@@ -67,10 +67,17 @@ advertises `documentSymbol` and `definition` support during `initialize`.
 
 # Architecture
 
-Everything currently lives in [`src/main.rs`](src/main.rs). For an overview of
-the design (the async-lsp `&mut self`/no-lock state model, how `documentSymbol`
-and the anchor/reference index are built from jotdown events) and the
-project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
+A Cargo workspace with two crates:
+
+- [`crates/djot-core`](crates/djot-core) -- protocol-agnostic djot analysis
+  (heading outline, anchor/reference index) working purely in byte offsets. No
+  LSP or pandoc types, so it can be shared by other tools (a djot-to-pandoc
+  exporter is planned).
+- [`crates/djot-ls`](crates/djot-ls) -- the `djot-ls` LSP binary; it depends on
+  `djot-core` and converts its byte-offset results to LSP types.
+
+For the design rationale (the async-lsp `&mut self`/no-lock state model, the
+core/LSP boundary) and project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
 
 # License
 
