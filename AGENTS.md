@@ -116,7 +116,8 @@ All binaries reuse `djot-core` without pulling in each other's types.
   `$EDITOR`; editor arguments are parsed with `shlex` and file paths are passed
   as direct process arguments so spaces are preserved. In skim, `ctrl-n`
   creates a new file from the current query relative to the scan root, rejects
-  empty or root-escaping paths, and opens the created file with `$EDITOR`.
+  empty or root-escaping paths, adds `.dj` when the query lacks a `.dj` /
+  `.djot` extension, and opens the created file with `$EDITOR`.
 - Unit tests live in the same file and cover metadata filtering, transitive
   references, dotted metadata keys, seed path normalization, and skim item
   behavior.

@@ -361,7 +361,7 @@ fn create_file_from_query(root: &Path, query: &str) -> Result<PathBuf, String> {
         return Err("cannot create a file from an empty query".to_string());
     }
 
-    let path = normalize(&root.join(name));
+    let path = normalize(&root.join(with_default_extension(name)));
     if !path.starts_with(root) {
         return Err(format!("new file path escapes root: {name}"));
     }
@@ -376,6 +376,15 @@ fn create_file_from_query(root: &Path, query: &str) -> Result<PathBuf, String> {
         .map_err(|err| format!("cannot create {}: {err}", path.display()))?;
 
     Ok(path)
+}
+
+fn with_default_extension(name: &str) -> PathBuf {
+    let path = Path::new(name);
+    if is_djot_file(path) {
+        path.to_path_buf()
+    } else {
+        path.with_extension("dj")
+    }
 }
 
 fn editor_command(editor: &str) -> Result<(String, Vec<String>), String> {
@@ -570,6 +579,26 @@ mod tests {
         let path = create_file_from_query(&root, "notes/other file.dj").unwrap();
         assert_eq!(path, root.join("notes/other file.dj"));
         assert!(path.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn create_file_from_query_adds_default_dj_extension() {
+        let root = unique_test_dir("djot-filter-create-extension-test");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let plain = create_file_from_query(&root, "topic").unwrap();
+        assert_eq!(plain, root.join("topic.dj"));
+
+        let nested = create_file_from_query(&root, "notes/topic").unwrap();
+        assert_eq!(nested, root.join("notes/topic.dj"));
+
+        let djot = create_file_from_query(&root, "notes/full.djot").unwrap();
+        assert_eq!(djot, root.join("notes/full.djot"));
+
+        let other = create_file_from_query(&root, "notes/raw.txt").unwrap();
+        assert_eq!(other, root.join("notes/raw.dj"));
 
         let _ = std::fs::remove_dir_all(root);
     }
