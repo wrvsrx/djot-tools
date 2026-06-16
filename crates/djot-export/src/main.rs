@@ -79,6 +79,9 @@ enum Kind {
     /// Inline code / fenced code: text is accumulated rather than child nodes.
     Verbatim,
     CodeBlock { lang: String, metadata: bool },
+    /// Produces no output and discards its children (e.g. link reference
+    /// definitions, which pandoc resolves rather than rendering).
+    Drop,
     Other,
 }
 
@@ -159,6 +162,7 @@ impl Frame {
                     }))
                 }
             }
+            Kind::Drop => Built::Drop,
             Kind::Other => Built::Splice(self.children),
         }
     }
@@ -184,6 +188,7 @@ fn convert_blocks(text: &str) -> Vec<Value> {
                     Container::Emphasis => Kind::Emph,
                     Container::Strong => Kind::Strong,
                     Container::Link(dst, _) => Kind::Link { dst: dst.to_string() },
+                    Container::LinkDefinition { .. } => Kind::Drop,
                     Container::Verbatim => Kind::Verbatim,
                     Container::CodeBlock { language } => Kind::CodeBlock {
                         lang: language.to_string(),
@@ -257,6 +262,14 @@ mod tests {
         let inner = &blocks[0]["c"][1];
         assert_eq!(inner[0]["t"], "Header");
         assert_eq!(inner[0]["c"][0], 1);
+    }
+
+    #[test]
+    fn link_reference_definitions_do_not_leak() {
+        // The `[ref]: url` definition must not emit a stray Str at block level.
+        let blocks = convert_blocks("see [x][ref]\n\n[ref]: https://e.com\n");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["t"], "Para");
     }
 
     #[test]
