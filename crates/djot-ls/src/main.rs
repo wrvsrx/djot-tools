@@ -116,14 +116,19 @@ impl LanguageServer for ServerState {
         &mut self,
         params: DocumentSymbolParams,
     ) -> BoxFuture<'static, Result<Option<DocumentSymbolResponse>, Self::Error>> {
-        let symbols = params.text_document.uri.to_file_path().ok().and_then(|path| {
-            self.workspace.get(&path).map(|entry| {
-                heading_outline(&entry.text)
-                    .iter()
-                    .map(|h| to_document_symbol(&entry.text, h))
-                    .collect::<Vec<_>>()
-            })
-        });
+        let symbols = params
+            .text_document
+            .uri
+            .to_file_path()
+            .ok()
+            .and_then(|path| {
+                self.workspace.get(&path).map(|entry| {
+                    heading_outline(&entry.text)
+                        .iter()
+                        .map(|h| to_document_symbol(&entry.text, h))
+                        .collect::<Vec<_>>()
+                })
+            });
         Box::pin(async move { Ok(symbols.map(DocumentSymbolResponse::Nested)) })
     }
 
@@ -145,7 +150,9 @@ impl ServerState {
     }
 
     fn is_in_workspace(&self, path: &Path) -> bool {
-        self.workspace_roots.iter().any(|root| path.starts_with(root))
+        self.workspace_roots
+            .iter()
+            .any(|root| path.starts_with(root))
     }
 
     /// Resolve goto-definition for the link under `position` in `uri`. Same-file

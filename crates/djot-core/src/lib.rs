@@ -140,16 +140,16 @@ pub fn build_index(text: &str) -> DocIndex {
         match event {
             // Headings carry the (possibly auto-generated) id directly.
             Event::Start(Container::Heading { id, .. }, _) => {
-                anchors
-                    .entry(id.into_owned())
-                    .or_insert_with(|| Anchor { range: span.clone() });
+                anchors.entry(id.into_owned()).or_insert_with(|| Anchor {
+                    range: span.clone(),
+                });
             }
             Event::Start(container, attrs) => {
                 // Any other element with an explicit {#id} is also an anchor.
                 if let Some(id) = attrs.get_value("id") {
-                    anchors
-                        .entry(id.to_string())
-                        .or_insert_with(|| Anchor { range: span.clone() });
+                    anchors.entry(id.to_string()).or_insert_with(|| Anchor {
+                        range: span.clone(),
+                    });
                 }
                 if let Container::Link(dst, _) = container {
                     open_links.push((dst.into_owned(), span.start));
@@ -187,7 +187,9 @@ pub fn metadata_block(text: &str) -> Option<String> {
     let mut in_meta = false;
     for (event, _) in Parser::new(text).into_offset_iter() {
         match event {
-            Event::Start(Container::CodeBlock { .. }, attrs) if has_class(&attrs, METADATA_CLASS) => {
+            Event::Start(Container::CodeBlock { .. }, attrs)
+                if has_class(&attrs, METADATA_CLASS) =>
+            {
                 in_meta = true;
             }
             Event::Str(s) if in_meta => content.push_str(&s),
@@ -375,10 +377,19 @@ mod tests {
     fn outline_nests_by_section_level() {
         let text = "# A\n\ntext\n\n## B\n\n### C\n\n# D\n";
         let roots = heading_outline(text);
-        assert_eq!(roots.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["A", "D"]);
+        assert_eq!(
+            roots.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(),
+            ["A", "D"]
+        );
         let a = &roots[0];
         assert_eq!(a.level, 1);
-        assert_eq!(a.children.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["B"]);
+        assert_eq!(
+            a.children
+                .iter()
+                .map(|h| h.name.as_str())
+                .collect::<Vec<_>>(),
+            ["B"]
+        );
         assert_eq!(a.children[0].children[0].name, "C");
         // Parent section range encloses its children.
         assert!(a.range.end >= a.children[0].range.end);
@@ -392,7 +403,9 @@ mod tests {
         assert!(index.anchors.contains_key("b"));
 
         let targets: Vec<_> = index.references.iter().map(|r| &r.target).collect();
-        assert!(targets.contains(&&RefTarget::Internal { id: "My-Heading".into() }));
+        assert!(targets.contains(&&RefTarget::Internal {
+            id: "My-Heading".into()
+        }));
         assert!(targets.contains(&&RefTarget::Url("https://x.y".into())));
         assert!(targets.contains(&&RefTarget::External {
             path: "o.dj".into(),
@@ -413,15 +426,24 @@ mod tests {
         let from = PathBuf::from("/notes/sub/a.dj");
         assert_eq!(
             resolve_target(&from, &RefTarget::Internal { id: "x".into() }).unwrap(),
-            ResolvedTarget { path: from.clone(), id: Some("x".into()) }
+            ResolvedTarget {
+                path: from.clone(),
+                id: Some("x".into())
+            }
         );
         assert_eq!(
             resolve_target(
                 &from,
-                &RefTarget::External { path: "../b.dj".into(), id: Some("y".into()) }
+                &RefTarget::External {
+                    path: "../b.dj".into(),
+                    id: Some("y".into())
+                }
             )
             .unwrap(),
-            ResolvedTarget { path: PathBuf::from("/notes/b.dj"), id: Some("y".into()) }
+            ResolvedTarget {
+                path: PathBuf::from("/notes/b.dj"),
+                id: Some("y".into())
+            }
         );
         assert!(resolve_target(&from, &RefTarget::Url("https://x".into())).is_none());
     }
@@ -452,10 +474,16 @@ mod tests {
     #[test]
     fn parse_dst_classifies_destinations() {
         assert_eq!(parse_dst("#sec"), RefTarget::Internal { id: "sec".into() });
-        assert_eq!(parse_dst("mailto:a@b.c"), RefTarget::Url("mailto:a@b.c".into()));
+        assert_eq!(
+            parse_dst("mailto:a@b.c"),
+            RefTarget::Url("mailto:a@b.c".into())
+        );
         assert_eq!(
             parse_dst("other.dj"),
-            RefTarget::External { path: "other.dj".into(), id: None }
+            RefTarget::External {
+                path: "other.dj".into(),
+                id: None
+            }
         );
     }
 }

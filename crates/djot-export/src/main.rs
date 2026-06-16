@@ -102,18 +102,29 @@ enum Built {
 /// its pandoc node on close.
 enum Kind {
     Root,
-    Section { id: String },
-    Heading { level: u32 },
+    Section {
+        id: String,
+    },
+    Heading {
+        level: u32,
+    },
     Para,
     BlockQuote,
-    List { ordered: bool },
+    List {
+        ordered: bool,
+    },
     ListItem,
     Emph,
     Strong,
-    Link { dst: String },
+    Link {
+        dst: String,
+    },
     /// Inline code / fenced code: text is accumulated rather than child nodes.
     Verbatim,
-    CodeBlock { lang: String, metadata: bool },
+    CodeBlock {
+        lang: String,
+        metadata: bool,
+    },
     /// Produces no output and discards its children (e.g. link reference
     /// definitions, which pandoc resolves rather than rendering).
     Drop,
@@ -213,7 +224,9 @@ fn convert_blocks(text: &str) -> Vec<Value> {
                 let kind = match &container {
                     Container::Document => Kind::Root,
                     Container::Section { id } => Kind::Section { id: id.to_string() },
-                    Container::Heading { level, .. } => Kind::Heading { level: *level as u32 },
+                    Container::Heading { level, .. } => Kind::Heading {
+                        level: *level as u32,
+                    },
                     Container::Paragraph => Kind::Para,
                     Container::Blockquote => Kind::BlockQuote,
                     Container::List { kind, .. } => Kind::List {
@@ -222,7 +235,9 @@ fn convert_blocks(text: &str) -> Vec<Value> {
                     Container::ListItem => Kind::ListItem,
                     Container::Emphasis => Kind::Emph,
                     Container::Strong => Kind::Strong,
-                    Container::Link(dst, _) => Kind::Link { dst: dst.to_string() },
+                    Container::Link(dst, _) => Kind::Link {
+                        dst: dst.to_string(),
+                    },
                     Container::LinkDefinition { .. } => Kind::Drop,
                     Container::Verbatim => Kind::Verbatim,
                     Container::CodeBlock { language } => Kind::CodeBlock {
@@ -301,7 +316,8 @@ mod tests {
 
     #[test]
     fn metadata_is_folded_into_meta_not_dropped() {
-        let ast = to_pandoc_json("{.metadata}\n``` toml\ntitle = \"X\"\ndraft = true\n```\n\n# H\n");
+        let ast =
+            to_pandoc_json("{.metadata}\n``` toml\ntitle = \"X\"\ndraft = true\n```\n\n# H\n");
         assert_eq!(ast["meta"]["title"], json!({ "t": "MetaString", "c": "X" }));
         assert_eq!(ast["meta"]["draft"], json!({ "t": "MetaBool", "c": true }));
         // The block is folded into meta, so the body holds only the "# H" section.

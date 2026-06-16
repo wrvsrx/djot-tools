@@ -51,7 +51,10 @@ fn document_symbol_returns_headings() {
     // A parent's range must enclose its child's range (line-wise here).
     let title_end = title["range"]["end"]["line"].as_u64().unwrap();
     let sub_end = lvl3[0]["range"]["end"]["line"].as_u64().unwrap();
-    assert!(title_end >= sub_end, "parent range must contain child range");
+    assert!(
+        title_end >= sub_end,
+        "parent range must contain child range"
+    );
 
     // The "Second" sibling is a leaf.
     assert!(children(&roots[1]).is_empty());

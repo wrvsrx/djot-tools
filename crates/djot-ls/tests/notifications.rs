@@ -28,5 +28,8 @@ fn did_save_does_not_crash_the_server() {
     let answered = responses
         .iter()
         .any(|m| m["id"] == json!(2) && m.get("result").is_some());
-    assert!(answered, "server did not answer documentSymbol after didSave");
+    assert!(
+        answered,
+        "server did not answer documentSymbol after didSave"
+    );
 }
