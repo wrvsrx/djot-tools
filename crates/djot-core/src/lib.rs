@@ -71,6 +71,19 @@ pub struct DocIndex {
     pub references: Vec<Reference>,
 }
 
+/// Protocol-agnostic diagnostics produced by djot analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalysisDiagnostic {
+    pub range: Range<usize>,
+    pub kind: DiagnosticKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiagnosticKind {
+    UnresolvedAnchor { id: String },
+    UnresolvedPath { path: String },
+}
+
 /// Build the heading hierarchy for `text`.
 ///
 /// jotdown wraps each heading in a `Section` container that nests by heading
@@ -356,6 +369,42 @@ impl Workspace {
         }
         out
     }
+
+    /// Diagnostics for unresolved file and anchor references in one loaded
+    /// document. URLs are intentionally ignored.
+    pub fn diagnostics_for(&self, path: &Path) -> Vec<AnalysisDiagnostic> {
+        let Some(entry) = self.get(path) else {
+            return Vec::new();
+        };
+
+        let mut diagnostics = Vec::new();
+        for reference in &entry.index.references {
+            let Some(target) = resolve_target(path, &reference.target) else {
+                continue;
+            };
+
+            let Some(target_entry) = self.get(&target.path) else {
+                if let RefTarget::External { path, .. } = &reference.target {
+                    diagnostics.push(AnalysisDiagnostic {
+                        range: reference.source.clone(),
+                        kind: DiagnosticKind::UnresolvedPath { path: path.clone() },
+                    });
+                }
+                continue;
+            };
+
+            if let Some(id) = target.id {
+                if !target_entry.index.anchors.contains_key(&id) {
+                    diagnostics.push(AnalysisDiagnostic {
+                        range: reference.source.clone(),
+                        kind: DiagnosticKind::UnresolvedAnchor { id },
+                    });
+                }
+            }
+        }
+
+        diagnostics
+    }
 }
 
 /// A djot section being assembled while walking the event stream.
@@ -495,6 +544,34 @@ mod tests {
         let back = ws.references_to(&b, "Topic");
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].0, a);
+    }
+
+    #[test]
+    fn workspace_reports_unresolved_references() {
+        let a = PathBuf::from("/notes/a.dj");
+        let b = PathBuf::from("/notes/b.dj");
+        let doc_a = "# A\n\n[bad](#Missing) [file](missing.dj) [anchor](b.dj#Nope) [ok](https://example.com)\n";
+        let mut ws = Workspace::new();
+        ws.insert(a.clone(), doc_a.to_string());
+        ws.insert(b, "# Existing\n".to_string());
+
+        let diagnostics = ws.diagnostics_for(&a);
+        assert_eq!(diagnostics.len(), 3);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::UnresolvedAnchor {
+                    id: "Missing".into(),
+                }
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::UnresolvedPath {
+                    path: "missing.dj".into(),
+                }
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind == DiagnosticKind::UnresolvedAnchor { id: "Nope".into() }
+        }));
     }
 
     #[test]
