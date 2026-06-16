@@ -1,4 +1,7 @@
-# djot-language-server
+{.metadata}
+``` toml
+title = "djot-language-server"
+```
 
 A [Language Server](https://microsoft.github.io/language-server-protocol/) for
 [Djot](https://djot.net) markup, written in Rust. It parses documents with
@@ -8,7 +11,7 @@ A [Language Server](https://microsoft.github.io/language-server-protocol/) for
 The binary is `djot-ls`. It handles `.dj` / `.djot` files.
 
 _This README is generated from `README.dj` with this project's own exporter:_
-`djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/strip-sections.lua > README.md`
+`djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/title-heading.lua --lua-filter=dev/strip-sections.lua > README.md`
 
 # Features
 

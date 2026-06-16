@@ -8,16 +8,16 @@ A [Language Server](https://microsoft.github.io/language-server-protocol/) for
 The binary is `djot-ls`. It handles `.dj` / `.djot` files.
 
 *This README is generated from `README.dj` with this projects own exporter:*
-`djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/strip-sections.lua > README.md`
+`djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/title-heading.lua --lua-filter=dev/strip-sections.lua > README.md`
 
-# Features
+## Features
 
-## `textDocument/documentSymbol`
+### `textDocument/documentSymbol`
 
 Returns the document outline: every heading becomes a symbol, nested by section
 level, so editors show a collapsible tree of the document structure.
 
-## `textDocument/definition`
+### `textDocument/definition`
 
 Jumps from a link to the heading or anchor it points at, **within the same file**.
 It works for explicit anchor links like `[text](#some-heading)` as well as
@@ -33,7 +33,7 @@ More capabilities (cross-file definition, backlinks, diagnostics, completion,
 semantic tokens) are planned – see [`docs/plan.dj`](docs/plan.dj) for the
 roadmap.
 
-# Export
+## Export
 
 `djot-export` converts a djot document to a [pandoc](https://pandoc.org) JSON
 AST, so you can hand it to pandoc for further conversion:
@@ -47,7 +47,7 @@ Document conventions become export transformations here: a leading
 into pandoc metadata) rather than printed as a code block. The djot-to-pandoc
 conversion currently covers a common subset of djot.
 
-# Build
+## Build
 
 ``` sh
 cargo build            # produces target/debug/djot-ls
@@ -57,9 +57,9 @@ cargo test             # black-box integration tests over stdio
 A Nix dev shell is provided (`nix develop`, or `direnv allow` with the bundled
 flake). The toolchain is otherwise just a standard Rust + Cargo install.
 
-# Editor setup
+## Editor setup
 
-## Neovim (0.11+)
+### Neovim (0.11+)
 
 A minimal config lives at [`dev/nvim.lua`](dev/nvim.lua):
 
@@ -74,12 +74,12 @@ vim.lsp.enable('djot-language-server')
 Make sure `.dj`/`.djot` files map to the `djot` filetype and that the `cmd`
 points at the built binary. Server-side logs/panics surface in `:LspLog`.
 
-## Other editors
+### Other editors
 
 Any LSP client works – launch `djot-ls` and let it communicate over stdio. It
 advertises `documentSymbol` and `definition` support during `initialize`.
 
-# Architecture
+## Architecture
 
 A Cargo workspace with three crates:
 
@@ -95,6 +95,6 @@ A Cargo workspace with three crates:
 For the design rationale (the async-lsp `&mut self`/no-lock state model, the
 core/LSP boundary) and project-specific gotchas, see [`AGENTS.md`](AGENTS.md).
 
-# License
+## License
 
 [MIT](LICENSE) © wrvsrx
