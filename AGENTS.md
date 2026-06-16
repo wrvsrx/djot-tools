@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings) and same-file `textDocument/definition` are implemented.
+A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings) and `textDocument/definition` (same-file and cross-file links) are implemented.
 
 This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that converts djot to a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`).
 
@@ -58,9 +58,9 @@ Three crates in a workspace, split along a deliberate boundary: **`djot-core` is
 
 `crates/djot-ls/src/main.rs` (bin `djot-ls`, depends on `djot-core`):
 
-- `ServerState` holds `client: ClientSocket` and `documents: HashMap<Url, String>`. Because the omni-trait gives handlers `&mut self`, document state needs **no locking** — this is the main reason async-lsp was chosen over tower-lsp.
-- Text sync is **FULL** (`TextDocumentSyncKind::FULL`): `did_change` replaces the whole stored string from the last content change. No incremental/rope handling yet.
-- `document_symbol` calls `heading_outline` then maps each `Heading` to `DocumentSymbol`; `definition` calls `build_index`, hit-tests the cursor byte offset against link spans, and resolves `Internal` targets to the anchor. Cross-file/`Url` targets return nothing yet.
+- `ServerState` holds `client: ClientSocket` and a `djot_core::Workspace` (path-keyed parsed documents). Because the omni-trait gives handlers `&mut self`, the index needs **no locking** — this is the main reason async-lsp was chosen over tower-lsp. URIs are mapped to/from paths with `Url::to_file_path`/`from_file_path` (file URIs only for now).
+- Text sync is **FULL** (`TextDocumentSyncKind::FULL`): `did_change` reparses the whole document into the workspace; `did_close` drops the buffer (a later lookup re-reads from disk).
+- `document_symbol` calls `heading_outline` on the stored text then maps each `Heading` to `DocumentSymbol`; `definition` (`resolve_definition`) hit-tests the cursor against link spans via the workspace, `resolve_target`s the link, lazily loads a cross-file target from disk if unseen, and returns the anchor's `Location`. Same-file and cross-file links go through the same path; external URLs return nothing.
 - `offset_to_position`/`position_to_offset` convert between byte offsets and LSP `Position` (UTF-16 columns) — O(n) per call, fine for now, worth precomputing line starts if it shows up in profiles.
 - `main()` wires the tower middleware stack (`Tracing`/`Lifecycle`/`CatchUnwind`/`Concurrency`/`ClientProcessMonitor`) around the router and runs `run_buffered` over real async stdio (`PipeStdin/PipeStdout::lock_tokio`). Tracing goes to **stderr** (stdout is the LSP transport).
 

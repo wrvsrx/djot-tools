@@ -139,7 +139,7 @@ fn did_save_does_not_crash_the_server() {
 
 /// `textDocument/definition` resolves same-document links — both explicit
 /// `#id` links and implicit heading references — to the heading, and returns
-/// nothing for cross-file targets (not implemented yet).
+/// nothing when the target file does not exist.
 #[test]
 fn definition_resolves_same_document_links() {
     // line 0: heading, line 2: two links, line 7: Epilogue heading, line 9: cross-file
@@ -154,7 +154,7 @@ fn definition_resolves_same_document_links() {
         json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///t.dj","languageId":"djot","version":1,"text":doc}}}),
         def(10, 2, 8),  // inside [inline](#My-Heading) -> line 0
         def(11, 2, 35), // inside [Epilogue][]          -> line 7
-        def(12, 9, 3),  // inside [ext](other.dj#sec)   -> null (cross-file)
+        def(12, 9, 3),  // inside [ext](other.dj#sec)   -> null (file absent)
         json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
         json!({"jsonrpc":"2.0","method":"exit","params":null}),
     ];
@@ -173,6 +173,44 @@ fn definition_resolves_same_document_links() {
     assert_eq!(result(10)["uri"], json!("file:///t.dj"));
     // Implicit heading reference [Epilogue][] jumps to the Epilogue heading.
     assert_eq!(result(11)["range"]["start"]["line"], json!(7));
-    // Cross-file target is not resolved yet.
+    // Cross-file target whose file does not exist on disk yields nothing.
     assert_eq!(result(12), json!(null));
+}
+
+/// `textDocument/definition` follows a `path#id` link into another file,
+/// loading that file from disk on demand.
+#[test]
+fn definition_jumps_across_files() {
+    let dir = std::env::temp_dir().join("djot-ls-xfile-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.dj");
+    let b = dir.join("b.dj");
+    std::fs::write(&a, "# A\n\nsee [to B](b.dj#Topic)\n").unwrap();
+    std::fs::write(&b, "# Intro\n\ntext\n\n## Topic\n\nbody\n").unwrap();
+
+    let a_uri = format!("file://{}", a.display());
+    let b_uri = format!("file://{}", b.display());
+    let doc_a = std::fs::read_to_string(&a).unwrap();
+    let link_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
+
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":a_uri,"languageId":"djot","version":1,"text":doc_a}}}),
+        // cursor on the b.dj#Topic link in a.dj (line 2)
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{"textDocument":{"uri":a_uri},"position":{"line":2,"character":link_col}}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let result = responses
+        .iter()
+        .find(|m| m["id"] == json!(2))
+        .expect("no definition response")["result"]
+        .clone();
+
+    // Jumps into b.dj, to the "## Topic" heading (line 4).
+    assert_eq!(result["uri"], json!(b_uri));
+    assert_eq!(result["range"]["start"]["line"], json!(4));
 }

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::ControlFlow;
 
 use async_lsp::client_monitor::ClientProcessMonitorLayer;
@@ -8,7 +7,7 @@ use async_lsp::router::Router;
 use async_lsp::server::LifecycleLayer;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ClientSocket, LanguageServer, ResponseError};
-use djot_core::{build_index, heading_outline, Heading, RefTarget};
+use djot_core::{heading_outline, resolve_target, Heading, Workspace};
 use futures::future::BoxFuture;
 use lsp_types::{
     DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
@@ -25,8 +24,9 @@ use tracing::Level;
 struct ServerState {
     #[allow(dead_code)]
     client: ClientSocket,
-    /// Full text of every open document, keyed by URI.
-    documents: HashMap<Url, String>,
+    /// Parsed documents, keyed by file path. Open buffers are inserted on
+    /// did_open/did_change; cross-file link targets are loaded from disk lazily.
+    workspace: Workspace,
 }
 
 impl LanguageServer for ServerState {
@@ -55,20 +55,27 @@ impl LanguageServer for ServerState {
 
     fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Self::NotifyResult {
         let doc = params.text_document;
-        self.documents.insert(doc.uri, doc.text);
+        if let Ok(path) = doc.uri.to_file_path() {
+            self.workspace.insert(path, doc.text);
+        }
         ControlFlow::Continue(())
     }
 
     fn did_change(&mut self, params: DidChangeTextDocumentParams) -> Self::NotifyResult {
         // FULL sync: the last change contains the entire document.
         if let Some(change) = params.content_changes.into_iter().last() {
-            self.documents.insert(params.text_document.uri, change.text);
+            if let Ok(path) = params.text_document.uri.to_file_path() {
+                self.workspace.insert(path, change.text);
+            }
         }
         ControlFlow::Continue(())
     }
 
     fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Self::NotifyResult {
-        self.documents.remove(&params.text_document.uri);
+        // Drop the buffer; a later cross-file lookup re-reads it from disk.
+        if let Ok(path) = params.text_document.uri.to_file_path() {
+            self.workspace.remove(&path);
+        }
         ControlFlow::Continue(())
     }
 
@@ -91,11 +98,13 @@ impl LanguageServer for ServerState {
         &mut self,
         params: DocumentSymbolParams,
     ) -> BoxFuture<'static, Result<Option<DocumentSymbolResponse>, Self::Error>> {
-        let symbols = self.documents.get(&params.text_document.uri).map(|text| {
-            heading_outline(text)
-                .iter()
-                .map(|h| to_document_symbol(text, h))
-                .collect::<Vec<_>>()
+        let symbols = params.text_document.uri.to_file_path().ok().and_then(|path| {
+            self.workspace.get(&path).map(|entry| {
+                heading_outline(&entry.text)
+                    .iter()
+                    .map(|h| to_document_symbol(&entry.text, h))
+                    .collect::<Vec<_>>()
+            })
         });
         Box::pin(async move { Ok(symbols.map(DocumentSymbolResponse::Nested)) })
     }
@@ -105,22 +114,42 @@ impl LanguageServer for ServerState {
         params: GotoDefinitionParams,
     ) -> BoxFuture<'static, Result<Option<GotoDefinitionResponse>, Self::Error>> {
         let pos = params.text_document_position_params;
-        let uri = pos.text_document.uri;
-        let location = self.documents.get(&uri).and_then(|text| {
-            let offset = position_to_offset(text, pos.position);
-            let index = build_index(text);
-            let reference = index.references.iter().find(|r| r.source.contains(&offset))?;
-            match &reference.target {
-                // Same-document anchor: jump to the heading / anchored block.
-                RefTarget::Internal { id } => index.anchors.get(id).map(|anchor| Location {
-                    uri: uri.clone(),
-                    range: byte_range_to_lsp(text, &anchor.range),
-                }),
-                // Cross-file targets and external URLs are not resolved yet.
-                RefTarget::External { .. } | RefTarget::Url(_) => None,
-            }
-        });
+        let location = self.resolve_definition(&pos.text_document.uri, pos.position);
         Box::pin(async move { Ok(location.map(GotoDefinitionResponse::Scalar)) })
+    }
+}
+
+impl ServerState {
+    /// Resolve goto-definition for the link under `position` in `uri`. Same-file
+    /// `#id` links and cross-file `path#id` links are handled uniformly through
+    /// the workspace index; a cross-file target not yet indexed is loaded from
+    /// disk on demand.
+    fn resolve_definition(&mut self, uri: &Url, position: Position) -> Option<Location> {
+        let from = uri.to_file_path().ok()?;
+        let offset = position_to_offset(&self.workspace.get(&from)?.text, position);
+
+        // Resolve the link under the cursor to a (path, id) target.
+        let target = {
+            let reference = self.workspace.reference_at(&from, offset)?;
+            resolve_target(&from, &reference.target)?
+        };
+
+        // Pull the target file into the index if we have not parsed it yet.
+        if !self.workspace.contains(&target.path) {
+            if let Ok(text) = std::fs::read_to_string(&target.path) {
+                self.workspace.insert(target.path.clone(), text);
+            }
+        }
+
+        let entry = self.workspace.get(&target.path)?;
+        let range = match &target.id {
+            Some(id) => entry.index.anchors.get(id)?.range.clone(),
+            None => 0..0, // a link to the file itself jumps to its top
+        };
+        Some(Location {
+            uri: Url::from_file_path(&target.path).ok()?,
+            range: byte_range_to_lsp(&entry.text, &range),
+        })
     }
 }
 
@@ -210,7 +239,7 @@ async fn main() {
             .layer(ClientProcessMonitorLayer::new(client.clone()))
             .service(Router::from_language_server(ServerState {
                 client,
-                documents: HashMap::new(),
+                workspace: Workspace::new(),
             }))
     });
 
