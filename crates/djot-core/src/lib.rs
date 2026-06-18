@@ -41,6 +41,8 @@ pub struct Heading {
 pub struct Anchor {
     /// Byte span to jump to (the heading or anchored line).
     pub range: Range<usize>,
+    /// Byte span of the anchor id/name that should be replaced by rename.
+    pub rename_range: Range<usize>,
 }
 
 /// A link in the document and what it points at.
@@ -48,6 +50,9 @@ pub struct Anchor {
 pub struct Reference {
     /// Byte range of the whole link, for cursor hit-testing.
     pub source: Range<usize>,
+    /// Byte span of the target anchor id inside the link source, if this link
+    /// names an anchor in editable source syntax.
+    pub target_id_range: Option<Range<usize>>,
     pub target: RefTarget,
 }
 
@@ -146,8 +151,7 @@ pub fn heading_outline(text: &str) -> Vec<Heading> {
 pub fn build_index(text: &str) -> DocIndex {
     let mut anchors: HashMap<String, Anchor> = HashMap::new();
     let mut references = Vec::new();
-    // Stack of (id, start byte) for headings currently open.
-    let mut open_headings: Vec<(String, usize)> = Vec::new();
+    let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
     // Stack of (destination, start byte) for links currently open.
     let mut open_links: Vec<(String, usize)> = Vec::new();
 
@@ -155,31 +159,56 @@ pub fn build_index(text: &str) -> DocIndex {
         match event {
             // Headings carry the (possibly auto-generated) id directly.
             Event::Start(Container::Heading { id, .. }, _) => {
-                open_headings.push((id.into_owned(), span.start));
+                open_headings.push(HeadingAnchorFrame {
+                    id: id.into_owned(),
+                    start: span.start,
+                    text_range: None,
+                });
             }
             Event::Start(container, attrs) => {
                 // Any other element with an explicit {#id} is also an anchor.
                 if let Some(id) = attrs.get_value("id") {
-                    anchors.entry(id.to_string()).or_insert_with(|| Anchor {
+                    let id = id.to_string();
+                    let rename_range =
+                        explicit_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
+                    anchors.entry(id).or_insert_with(|| Anchor {
                         range: span.clone(),
+                        rename_range,
                     });
                 }
                 if let Container::Link(dst, _) = container {
                     open_links.push((dst.into_owned(), span.start));
                 }
             }
+            Event::Str(_) => {
+                if let Some(heading) = open_headings.last_mut() {
+                    match &mut heading.text_range {
+                        Some(range) => range.end = span.end,
+                        None => heading.text_range = Some(span.clone()),
+                    }
+                }
+            }
             Event::End(Container::Heading { .. }) => {
-                if let Some((id, start)) = open_headings.pop() {
-                    anchors.entry(id).or_insert_with(|| Anchor {
-                        range: start..span.end,
+                if let Some(heading) = open_headings.pop() {
+                    let range = heading.start..span.end;
+                    let rename_range = explicit_id_range(text, &range, &heading.id)
+                        .or(heading.text_range)
+                        .unwrap_or_else(|| range.clone());
+                    anchors.entry(heading.id).or_insert_with(|| Anchor {
+                        range,
+                        rename_range,
                     });
                 }
             }
             Event::End(Container::Link(_, _)) => {
                 if let Some((dst, start)) = open_links.pop() {
+                    let source = start..span.end;
+                    let target = parse_dst(&dst);
+                    let target_id_range = reference_target_id_range(text, &source, &target);
                     references.push(Reference {
-                        source: start..span.end,
-                        target: parse_dst(&dst),
+                        source,
+                        target_id_range,
+                        target,
                     });
                 }
             }
@@ -426,6 +455,26 @@ fn is_djot_path(path: &str) -> bool {
         .is_some_and(|ext| ext == "dj" || ext == "djot")
 }
 
+fn explicit_id_range(text: &str, range: &Range<usize>, id: &str) -> Option<Range<usize>> {
+    let source = text.get(range.clone())?;
+    let needle = format!("#{id}");
+    let start = source.find(&needle)? + 1;
+    Some(range.start + start..range.start + start + id.len())
+}
+
+fn reference_target_id_range(
+    text: &str,
+    source: &Range<usize>,
+    target: &RefTarget,
+) -> Option<Range<usize>> {
+    let id = match target {
+        RefTarget::Internal { id } => id,
+        RefTarget::External { id: Some(id), .. } => id,
+        RefTarget::External { id: None, .. } | RefTarget::Url(_) => return None,
+    };
+    explicit_id_range(text, source, id)
+}
+
 /// A djot section being assembled while walking the event stream.
 struct SectionFrame {
     range_start: usize,
@@ -435,6 +484,12 @@ struct SectionFrame {
     capturing: bool,
     captured: bool,
     children: Vec<Heading>,
+}
+
+struct HeadingAnchorFrame {
+    id: String,
+    start: usize,
+    text_range: Option<Range<usize>>,
 }
 
 impl SectionFrame {
@@ -503,6 +558,37 @@ mod tests {
             path: "o.dj".into(),
             id: Some("s".into()),
         }));
+    }
+
+    #[test]
+    fn index_tracks_anchor_rename_ranges() {
+        let text = "# My Heading\n\n{#custom}\nparagraph\n";
+        let index = build_index(text);
+
+        let heading = &index.anchors["My-Heading"];
+        assert_eq!(&text[heading.rename_range.clone()], "My Heading");
+
+        let explicit = &index.anchors["custom"];
+        assert_eq!(&text[explicit.rename_range.clone()], "custom");
+    }
+
+    #[test]
+    fn index_tracks_reference_target_id_ranges() {
+        let text = "[internal](#Topic) [external](other.dj#Section) [file](other.dj) [implicit][]";
+        let index = build_index(text);
+
+        let ranges = index
+            .references
+            .iter()
+            .filter_map(|reference| {
+                reference
+                    .target_id_range
+                    .clone()
+                    .map(|range| text[range].to_string())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(ranges, ["Topic", "Section"]);
     }
 
     #[test]
