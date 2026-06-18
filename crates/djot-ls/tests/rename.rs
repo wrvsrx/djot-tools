@@ -68,7 +68,7 @@ fn rename_reference_updates_declaration_and_all_references() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let doc = dir.join("doc.dj");
-    let text = "{#xxx}\nAnchor\n\n[#xxx]\n\n[#xxx]\n";
+    let text = "{#xxx}\nAnchor\n\n[first](#xxx)\n\n[second](#xxx)\n";
     std::fs::write(&doc, text).unwrap();
 
     let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
