@@ -68,6 +68,63 @@ title = "plan"
   attribute (id/class) passthrough
 - [ ] richer metadata: render `author`/`date` (e.g. a byline), nested tables
 
+# Future: note/task semantics
+
+Keep the project centered on Djot documents and layer optional note/task
+semantics on top of normal Djot syntax. Notes are the source of truth; taskwarrior
+or calendar synchronization is not a goal for now.
+
+- [ ] Extract lightweight tasks from native Djot task list items:
+
+  ``` djot
+  - [ ] Write parser
+  - [x] Dump jotdown events
+  ```
+
+  - [ ] map `[ ]` to `todo` and `[x]` / `[X]` to `done`
+  - [ ] capture the task item range, checkbox marker range, and first paragraph
+    text as the task title
+  - [ ] expose tasks through `djot-core` without adding LSP-specific types
+
+- [ ] Support structured tasks with a `task` div inside a task list item:
+
+  ``` djot
+  - [ ] {#write-task-model due=2026-06-21 project=djot-tools}
+        ::: task
+        Define the first task semantic model.
+
+        It should keep checkbox status separate from task metadata.
+        :::
+  ```
+
+  - [ ] treat the checkbox as the task status
+  - [ ] treat the `task` div as the structured task body
+  - [ ] read the div attributes as task metadata (`id`, `due`, `scheduled`,
+    `project`, `tags`)
+  - [ ] use the first paragraph as the title and later blocks as details
+
+- [ ] Support list-level inheritance for grouped task metadata:
+
+  ``` djot
+  {.work project=djot-tools}
+  - [ ] Write task parser
+  - [ ] {#task-export due=2026-06-23}
+        ::: task
+        Export task list data.
+        :::
+  ```
+
+  - [ ] inherit list attributes into child tasks
+  - [ ] let task-level attributes override inherited attributes
+  - [ ] keep checkbox status local to each task
+
+- [ ] Add editor/tooling affordances once the core task model exists:
+
+  - [ ] hover summary for task status, id, due date, project, and title
+  - [ ] document symbols for tasks
+  - [ ] code action to toggle `[ ]` / `[x]`
+  - [ ] filter tasks by status/project/due fields in `djot-filter`
+
 # Notes
 
 The document may begin with a code block carrying the `metadata` class, e.g.
