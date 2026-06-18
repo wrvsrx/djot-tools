@@ -460,7 +460,7 @@ impl ServerState {
     }
 
     fn resolve_rename(
-        &self,
+        &mut self,
         uri: &Url,
         position: Position,
         new_name: String,
@@ -518,7 +518,7 @@ impl ServerState {
     }
 
     fn resolve_path_rename(
-        &self,
+        &mut self,
         from: &Path,
         offset: usize,
         new_name: String,
@@ -588,6 +588,12 @@ impl ServerState {
                 text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
                 edits: edits.into_iter().map(OneOf::Left).collect(),
             }));
+        }
+
+        if let Some(entry) = self.workspace.get(&target.old_path) {
+            let text = entry.text.clone();
+            self.workspace.insert(new_path, text);
+            self.workspace.remove(&target.old_path);
         }
 
         Ok(Some(WorkspaceEdit {

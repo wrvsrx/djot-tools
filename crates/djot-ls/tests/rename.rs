@@ -164,6 +164,46 @@ fn rename_link_path_requires_rename_resource_operation_capability() {
 }
 
 #[test]
+fn rename_link_path_keeps_diagnostics_clean_after_client_applies_edit() {
+    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-diagnostics-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let links = dir.join("links.dj");
+    let outline = dir.join("outline.dj");
+    let doc_before = "# Links\n\n[Appendix](outline.dj#appendix)\n";
+    let doc_after = "# Links\n\n[Appendix](outlinx.dj#appendix)\n";
+    std::fs::write(&links, doc_before).unwrap();
+    std::fs::write(&outline, "{#appendix}\n# Appendix\n").unwrap();
+
+    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
+    let links_uri = Url::from_file_path(&links).unwrap().to_string();
+    let path_col = doc_before
+        .lines()
+        .nth(2)
+        .unwrap()
+        .find("outline.dj")
+        .unwrap() as i64;
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "capabilities":{"workspace":{"workspaceEdit":{"documentChanges":true,"resourceOperations":["rename"]}}},
+            "processId":null,
+            "rootUri":root_uri
+        }}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":links_uri,"languageId":"djot","version":1,"text":doc_before}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/rename",
+        "params":{"textDocument":{"uri":links_uri},"position":{"line":2,"character":path_col},"newName":"outlinx.dj"}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":links_uri,"version":2},"contentChanges":[{"text":doc_after}]}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let diagnostics = diagnostics_for(&responses, &links_uri);
+    assert_eq!(diagnostics.last().unwrap().len(), 0);
+}
+
+#[test]
 fn rename_rejects_implicit_heading_anchor() {
     let dir = std::env::temp_dir().join("djot-ls-rename-implicit-heading-test");
     std::fs::create_dir_all(&dir).unwrap();
@@ -259,6 +299,22 @@ fn response_error_message(responses: &[Value], id: i64) -> &str {
         .unwrap_or_else(|| panic!("no response for id {id}"))["error"]["message"]
         .as_str()
         .expect("error message is not a string")
+}
+
+fn diagnostics_for(responses: &[Value], uri: &str) -> Vec<Vec<Value>> {
+    responses
+        .iter()
+        .filter(|message| {
+            message["method"] == json!("textDocument/publishDiagnostics")
+                && message["params"]["uri"] == json!(uri)
+        })
+        .map(|message| {
+            message["params"]["diagnostics"]
+                .as_array()
+                .expect("diagnostics is not an array")
+                .clone()
+        })
+        .collect()
 }
 
 fn sorted_edits(edit: &Value) -> Vec<(String, u64, u64, String)> {
