@@ -38,13 +38,13 @@ title = "plan"
 
 - [x] `textDocument/references`
 
-- [ ] `textDocument/rename`
+- [x] `textDocument/rename`
 
-  - [ ] rename heading/explicit anchors and all workspace references to them
-  - [ ] rename link targets from either the anchor declaration or any reference
-  - [ ] return a `WorkspaceEdit` with same-file and cross-file text edits
-  - [ ] reject URL links and file-only links that do not name an anchor
-  - [ ] keep edits byte/UTF-16 safe by reusing `djot-core` ranges and LSP
+  - [x] rename heading/explicit anchors and all workspace references to them
+  - [x] rename link targets from either the anchor declaration or any reference
+  - [x] return a `WorkspaceEdit` with same-file and cross-file text edits
+  - [x] reject URL links and file-only links that do not name an anchor
+  - [x] keep edits byte/UTF-16 safe by reusing `djot-core` ranges and LSP
     position conversion
 
 # Export
