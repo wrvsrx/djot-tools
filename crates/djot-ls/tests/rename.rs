@@ -139,6 +139,31 @@ fn rename_link_path_renames_file_and_updates_workspace_links() {
 }
 
 #[test]
+fn rename_link_path_requires_document_changes_capability() {
+    let responses = run_path_rename_with_workspace_edit_capabilities(json!({
+        "resourceOperations": ["rename"]
+    }));
+
+    assert_eq!(
+        response_error_message(&responses, 3),
+        "Renaming link paths requires client support for workspace.workspaceEdit.documentChanges."
+    );
+}
+
+#[test]
+fn rename_link_path_requires_rename_resource_operation_capability() {
+    let responses = run_path_rename_with_workspace_edit_capabilities(json!({
+        "documentChanges": true,
+        "resourceOperations": ["create", "delete"]
+    }));
+
+    assert_eq!(
+        response_error_message(&responses, 3),
+        "Renaming link paths requires client support for the workspace.workspaceEdit.resourceOperations rename operation."
+    );
+}
+
+#[test]
 fn rename_rejects_implicit_heading_anchor() {
     let dir = std::env::temp_dir().join("djot-ls-rename-implicit-heading-test");
     std::fs::create_dir_all(&dir).unwrap();
@@ -182,6 +207,49 @@ fn response_result(responses: &[Value], id: i64) -> &Value {
         .iter()
         .find(|message| message["id"] == json!(id))
         .unwrap_or_else(|| panic!("no response for id {id}"))["result"]
+}
+
+fn run_path_rename_with_workspace_edit_capabilities(workspace_edit: Value) -> Vec<Value> {
+    let suffix = workspace_edit
+        .as_object()
+        .map(|object| {
+            let mut keys = object.keys().cloned().collect::<Vec<_>>();
+            keys.sort();
+            keys.join("-")
+        })
+        .unwrap_or_else(|| "none".to_string());
+    let dir = std::env::temp_dir().join(format!(
+        "djot-ls-rename-link-path-capability-test-{}-{}",
+        std::process::id(),
+        suffix
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("a.dj");
+    let b = dir.join("b.dj");
+    let doc_a = "# A\n\nsee [topic](b.dj#topic)\n";
+    std::fs::write(&a, doc_a).unwrap();
+    std::fs::write(&b, "{#topic}\nTopic\n").unwrap();
+
+    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
+    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let path_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
+    let position = json!({"line":2,"character":path_col});
+    let text_document = json!({"uri":a_uri});
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "capabilities":{"workspace":{"workspaceEdit":workspace_edit}},
+            "processId":null,
+            "rootUri":root_uri
+        }}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"textDocument/rename",
+        "params":{"textDocument":text_document,"position":position,"newName":"renamed.dj"}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    run_session(&msgs)
 }
 
 fn response_error_message(responses: &[Value], id: i64) -> &str {

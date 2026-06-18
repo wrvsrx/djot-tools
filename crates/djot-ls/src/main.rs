@@ -530,10 +530,11 @@ impl ServerState {
             Err(PathRenameError::TargetNotIndexed) => return Err(unindexed_path_rename_error()),
         };
 
-        if !self.workspace_edit_capabilities.document_changes
-            || !self.workspace_edit_capabilities.rename_resource_operation
-        {
-            return Err(rename_file_capability_error());
+        if !self.workspace_edit_capabilities.document_changes {
+            return Err(document_changes_capability_error());
+        }
+        if !self.workspace_edit_capabilities.rename_resource_operation {
+            return Err(rename_resource_operation_capability_error());
         }
 
         let new_path = self.resolve_new_link_path(from, &new_name)?;
@@ -1067,10 +1068,17 @@ fn implicit_heading_rename_error() -> ResponseError {
     )
 }
 
-fn rename_file_capability_error() -> ResponseError {
+fn document_changes_capability_error() -> ResponseError {
     ResponseError::new(
         ErrorCode::INVALID_REQUEST,
-        "Renaming link paths requires client support for workspace documentChanges and rename resource operations.",
+        "Renaming link paths requires client support for workspace.workspaceEdit.documentChanges.",
+    )
+}
+
+fn rename_resource_operation_capability_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Renaming link paths requires client support for the workspace.workspaceEdit.resourceOperations rename operation.",
     )
 }
 
