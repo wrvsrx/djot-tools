@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "djot-core"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "jotdown",
  "serde",
@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "djot-export"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "djot-core",
  "jotdown",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "djot-filter"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "clap 4.6.1",
  "djot-core",
@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "djot-ls"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "async-lsp",
  "djot-core",
