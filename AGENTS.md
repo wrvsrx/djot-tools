@@ -22,6 +22,8 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 - `crates/djot-export/` is the `djot-export` CLI.
 - `crates/djot-filter/` is the `djot-filter` CLI.
 - `docs/plan.dj` is the feature roadmap.
+- `docs/semantics.dj` describes the current project semantics layered on top of
+  Djot syntax.
 - `default.nix` packages the workspace binaries as the `djot-tools` Nix
   package. The version is read from `Cargo.toml` with `builtins.fromTOML`.
 - `examples/*.dj` are small manual test fixtures for outlines, links, and
@@ -94,6 +96,17 @@ djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/title-heading.lua
 ```
 
 `dev/title-heading.lua` turns the metadata `title` into the document's single H1 and demotes the other headings; `dev/strip-sections.lua` unwraps djot's implicit `<section>` divs.
+
+## Semantics documentation
+
+`docs/semantics.dj` describes only the semantics that are currently implemented
+and shared by the tools: document/workspace identity, metadata, anchors,
+references, target resolution, and current semantic diagnostics. Keep LSP
+operations such as hover, completion, definition, references, and rename out of
+that document unless their behavior changes the underlying semantics; those
+operations should follow naturally from the semantic model. Future plans and
+unimplemented semantics, including task/note semantics, belong in
+`docs/plan.dj`.
 
 ## Build gotcha: do not bump tokio
 
