@@ -73,8 +73,9 @@ title = "plan"
 `djot-filter`: scan a workspace of Djot documents and select files by references,
 metadata, text, and future semantic fields.
 
-- [x] filter by referenced documents (`--referenced-by`, `--direct`)
-- [x] filter by string metadata fields (`--metadata KEY=REGEX`)
+- [x] filter by referenced documents through CEL (`directly_referenced_by`,
+  `transitively_referenced_by`)
+- [x] filter by title through CEL (`title`)
 - [x] interactive selection with in-memory preview and file creation
 - [x] add a CEL-based query predicate (`--query EXPR`) instead of designing a
   project-specific query language from scratch

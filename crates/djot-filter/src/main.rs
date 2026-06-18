@@ -8,7 +8,6 @@ use std::sync::Arc;
 use cel::{Context, ExecutionError, Program, Value};
 use clap::Parser;
 use djot_core::{metadata_block, resolve_target, Workspace};
-use regex::Regex;
 use skim::prelude::*;
 
 fn main() -> ExitCode {
@@ -24,24 +23,6 @@ fn main() -> ExitCode {
     };
 
     let mut paths = docs.paths.clone();
-    if !config.referenced_by.is_empty() {
-        let seeds = config
-            .referenced_by
-            .iter()
-            .map(|path| referenced_by_path(&root, path))
-            .collect::<Vec<_>>();
-        let referenced = referenced_files(&docs.workspace, &seeds, config.direct);
-        paths.retain(|path| referenced.contains(path));
-    }
-
-    if !config.metadata_filters.is_empty() {
-        paths.retain(|path| {
-            docs.texts
-                .get(path)
-                .is_some_and(|text| metadata_matches(text, &config.metadata_filters))
-        });
-    }
-
     if let Some(query) = &config.query {
         let plan = match QueryPlan::compile(query) {
             Ok(plan) => plan,
@@ -90,48 +71,13 @@ struct Config {
     #[arg(long, value_name = "DIR")]
     root: Option<PathBuf>,
 
-    /// Keep files directly or indirectly referenced by FILE. May be repeated;
-    /// the result is the union.
-    #[arg(long = "referenced-by", value_name = "FILE")]
-    referenced_by: Vec<PathBuf>,
-
-    /// With --referenced-by, keep only directly referenced files.
-    #[arg(long)]
-    direct: bool,
-
     /// Re-filter results interactively with skim.
     #[arg(short, long)]
     interactive: bool,
 
-    /// Keep files whose string metadata KEY matches REGEX. May be repeated; all
-    /// metadata filters must match.
-    #[arg(long = "metadata", value_name = "KEY=REGEX", value_parser = parse_metadata_filter)]
-    metadata_filters: Vec<MetadataFilter>,
-
     /// Keep files whose CEL predicate evaluates to true.
     #[arg(long, value_name = "EXPR")]
     query: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct MetadataFilter {
-    key: String,
-    regex: Regex,
-}
-
-fn parse_metadata_filter(spec: &str) -> Result<MetadataFilter, String> {
-    let Some((key, pattern)) = spec.split_once('=') else {
-        return Err(format!("metadata filter `{spec}` must be KEY=REGEX"));
-    };
-    if key.is_empty() {
-        return Err("metadata key cannot be empty".to_string());
-    }
-    let regex =
-        Regex::new(pattern).map_err(|err| format!("invalid regex for metadata `{key}`: {err}"))?;
-    Ok(MetadataFilter {
-        key: key.to_string(),
-        regex,
-    })
 }
 
 struct LoadedDocs {
@@ -376,69 +322,6 @@ fn collect_djot_files(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), String>
         }
     }
     Ok(())
-}
-
-fn referenced_files(
-    workspace: &Workspace,
-    seeds: &[PathBuf],
-    direct_only: bool,
-) -> HashSet<PathBuf> {
-    let mut out = HashSet::new();
-    let mut queue = VecDeque::new();
-    let seeds = seeds.iter().cloned().collect::<HashSet<_>>();
-
-    for seed in &seeds {
-        queue.push_back(seed.clone());
-    }
-
-    while let Some(source) = queue.pop_front() {
-        let Some(entry) = workspace.get(&source) else {
-            continue;
-        };
-
-        for reference in &entry.index.references {
-            let Some(target) = resolve_target(&source, &reference.target) else {
-                continue;
-            };
-            if !workspace.contains(&target.path) {
-                continue;
-            }
-            if !out.insert(target.path.clone()) {
-                continue;
-            }
-            if !direct_only && !seeds.contains(&target.path) {
-                queue.push_back(target.path);
-            }
-        }
-    }
-
-    for seed in seeds {
-        out.remove(&seed);
-    }
-    out
-}
-
-fn metadata_matches(text: &str, filters: &[MetadataFilter]) -> bool {
-    let Some(metadata) = metadata_block(text) else {
-        return false;
-    };
-    let Ok(table) = toml::from_str::<toml::Table>(&metadata) else {
-        return false;
-    };
-
-    filters.iter().all(|filter| {
-        metadata_string(&table, &filter.key).is_some_and(|value| filter.regex.is_match(value))
-    })
-}
-
-fn metadata_string<'a>(table: &'a toml::Table, key: &str) -> Option<&'a str> {
-    let mut parts = key.split('.');
-    let first = parts.next()?;
-    let mut value = table.get(first)?;
-    for part in parts {
-        value = value.as_table()?.get(part)?;
-    }
-    value.as_str()
 }
 
 fn document_title(text: &str) -> Option<String> {
@@ -688,14 +571,6 @@ fn absolute_path(path: &Path) -> PathBuf {
     }
 }
 
-fn referenced_by_path(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        normalize(path)
-    } else {
-        normalize(&root.join(path))
-    }
-}
-
 fn default_root(config: &Config) -> PathBuf {
     absolute_path(config.root.as_deref().unwrap_or_else(|| Path::new(".")))
 }
@@ -732,66 +607,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metadata_filter_requires_string_value_matching_regex() {
-        let filters = vec![parse_metadata_filter("title=Guide$").unwrap()];
-        let text = "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\ndraft = true\n```\n";
-        assert!(metadata_matches(text, &filters));
-
-        let filters = vec![parse_metadata_filter("draft=true").unwrap()];
-        assert!(!metadata_matches(text, &filters));
-    }
-
-    #[test]
-    fn referenced_files_can_be_direct_or_transitive() {
-        let root = unique_test_dir("djot-filter-reference-test");
-        std::fs::create_dir_all(&root).unwrap();
-        let a = root.join("a.dj");
-        let b = root.join("b.dj");
-        let c = root.join("c.dj");
-        std::fs::write(&a, "[b](b.dj)\n").unwrap();
-        std::fs::write(&b, "[c](c.dj)\n").unwrap();
-        std::fs::write(&c, "# C\n").unwrap();
-
-        let docs = load_docs(&root).unwrap();
-        let direct = referenced_files(&docs.workspace, &[normalize(&a)], true);
-        assert!(direct.contains(&normalize(&b)));
-        assert!(!direct.contains(&normalize(&c)));
-
-        let transitive = referenced_files(&docs.workspace, &[normalize(&a)], false);
-        assert!(transitive.contains(&normalize(&b)));
-        assert!(transitive.contains(&normalize(&c)));
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn metadata_key_supports_dotted_tables() {
-        let filters = vec![parse_metadata_filter("book.title=Guide").unwrap()];
-        let text = "{.metadata}\n``` toml\n[book]\ntitle = \"Guide\"\n```\n";
-        assert!(metadata_matches(text, &filters));
-    }
-
-    #[test]
-    fn referenced_by_relative_paths_are_root_relative() {
-        let root = normalize(Path::new("/tmp/djot-filter-root"));
-        assert_eq!(
-            referenced_by_path(&root, Path::new("index.dj")),
-            root.join("index.dj")
-        );
-        assert_eq!(
-            referenced_by_path(&root, Path::new("nested/../index.dj")),
-            root.join("index.dj")
-        );
-    }
-
-    #[test]
     fn root_defaults_to_current_directory() {
         let config = Config {
             root: None,
-            referenced_by: Vec::new(),
-            direct: false,
             interactive: false,
-            metadata_filters: Vec::new(),
             query: None,
         };
         assert_eq!(default_root(&config), absolute_path(Path::new(".")));

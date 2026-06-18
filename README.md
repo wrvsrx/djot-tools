@@ -66,20 +66,14 @@ conversion currently covers a common subset of djot.
 match all filters. If no directory is given, it scans the current directory:
 
 ``` sh
-djot-filter --metadata 'title=semantics'
-djot-filter --root docs --metadata 'title=semantics'
-djot-filter --root notes --referenced-by index.dj
-djot-filter --root notes --referenced-by index.dj --direct
-djot-filter --root notes --query 'path.startsWith("docs/") && title.matches("semantics")'
+djot-filter --query 'title.matches("semantics")'
+djot-filter --root docs --query 'title.matches("semantics")'
 djot-filter --root notes --query '"index.dj" in transitively_referenced_by'
-djot-filter --root notes --metadata 'status=active' --interactive
+djot-filter --root notes --query 'path.startsWith("docs/")' --interactive
 ```
 
-`--referenced-by` keeps files directly or indirectly referenced by one or more
-seed files. `--direct` restricts that to direct references. `--metadata
-KEY=REGEX` keeps files whose string metadata field matches the regex; it may be
-repeated. `--query EXPR` keeps files whose CEL expression evaluates to true.
-The query context exposes `path`, `title`, `directly_referenced_by`, and
+`--query EXPR` keeps files whose CEL expression evaluates to true. The query
+context exposes `path`, `title`, `directly_referenced_by`, and
 `transitively_referenced_by`; reference lists contain root-relative paths, and
 the transitive list includes direct referrers. `--interactive` opens the
 filtered results in skim; skim matches against each files path and full text,
