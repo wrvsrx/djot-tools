@@ -73,18 +73,23 @@ djot-filter --metadata 'title=semantics'
 djot-filter --root docs --metadata 'title=semantics'
 djot-filter --root notes --referenced-by index.dj
 djot-filter --root notes --referenced-by index.dj --direct
+djot-filter --root notes --query 'path.startsWith("docs/") && title.matches("semantics")'
+djot-filter --root notes --query '"index.dj" in transitively_referenced_by'
 djot-filter --root notes --metadata 'status=active' --interactive
 ```
 
 `--referenced-by` keeps files directly or indirectly referenced by one or more
 seed files. `--direct` restricts that to direct references. `--metadata
 KEY=REGEX` keeps files whose string metadata field matches the regex; it may be
-repeated. `--interactive` opens the filtered results in skim; skim matches
-against each file's path and full text, previews the file content with basic
-Djot highlighting, and opens the selected files with `EDITOR`. In interactive
-mode, `ctrl-n` creates a new file from the current query, relative to `--root`,
-adds a `.dj` extension when the query has no `.dj` / `.djot` extension, and
-opens it with `EDITOR`.
+repeated. `--query EXPR` keeps files whose CEL expression evaluates to true.
+The query context exposes `path`, `title`, `directly_referenced_by`, and
+`transitively_referenced_by`; reference lists contain root-relative paths, and
+the transitive list includes direct referrers. `--interactive` opens the
+filtered results in skim; skim matches against each file's path and full text,
+previews the file content with basic Djot highlighting, and opens the selected
+files with `EDITOR`. In interactive mode, `ctrl-n` creates a new file from the
+current query, relative to `--root`, adds a `.dj` extension when the query has
+no `.dj` / `.djot` extension, and opens it with `EDITOR`.
 
 # Build
 

@@ -76,26 +76,26 @@ metadata, text, and future semantic fields.
 - [x] filter by referenced documents (`--referenced-by`, `--direct`)
 - [x] filter by string metadata fields (`--metadata KEY=REGEX`)
 - [x] interactive selection with in-memory preview and file creation
-- [ ] add a CEL-based query predicate (`--query EXPR`) instead of designing a
+- [x] add a CEL-based query predicate (`--query EXPR`) instead of designing a
   project-specific query language from scratch
 
   ``` sh
-  djot-filter --query 'path.startsWith("docs/") && metadata.title.matches("semantics")'
-  djot-filter --query '"planning" in metadata.tags'
-  djot-filter --query 'text.contains("diagnostics") || anchors.exists(a, a == "Usage-Guide")'
+  djot-filter --query 'path.startsWith("docs/") && title.matches("semantics")'
+  djot-filter --query '"index.dj" in directly_referenced_by'
+  djot-filter --query '"index.dj" in transitively_referenced_by'
   ```
 
-  - [ ] expose a conservative document record to CEL (`path`, `title`, `text`,
-    `metadata`, `anchors`, `links`)
-  - [ ] compile/type-check the CEL expression once, then evaluate it against
-    each candidate document
+  - [x] expose a conservative document record to CEL (`path`, `title`,
+    `directly_referenced_by`, `transitively_referenced_by`)
+  - [x] compile the CEL expression once, then evaluate it against each candidate
+    document
   - [ ] keep existing flags as stable shorthand for common filters
-  - [ ] start with an O(n) scan over loaded documents; parsing/indexing and file
+  - [x] start with an O(n) scan over loaded documents; parsing/indexing and file
     I/O are expected to dominate at current scales
-  - [ ] structure the implementation as a query plan so future indexed
+  - [x] structure the implementation as a query plan so future indexed
     prefilters can narrow candidates before full CEL evaluation
-  - [ ] consider indexed prefilters for path prefixes, exact metadata fields,
-    anchors, outgoing links, and backlinks
+  - [ ] consider indexed prefilters for path prefixes, titles, direct referrers,
+    and transitive referrers
 
 # Future: note/task semantics
 
