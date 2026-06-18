@@ -10,6 +10,7 @@ its target.
 - Cross-file link: [other doc](outline.dj#Usage) jumps to the "Usage"
   heading in `outline.dj`
 - Link to a anchor twice: [other doc](outline.dj#Usage)
+- Cross-file link to explicit anchor: [Appendix](outline.dj#appendix)
 - External (ignored): [djot](https://djot.net)
 
 [manual]: https://example.com/manual
