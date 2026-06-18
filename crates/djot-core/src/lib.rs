@@ -53,6 +53,9 @@ pub struct Anchor {
 pub struct Reference {
     /// Byte range of the whole link, for cursor hit-testing.
     pub source: Range<usize>,
+    /// Byte span of the target path inside the link source, if this link names
+    /// a file path in editable source syntax.
+    pub target_path_range: Option<Range<usize>>,
     /// Byte span of the target anchor id inside the link source, if this link
     /// names an anchor in editable source syntax.
     pub target_id_range: Option<Range<usize>>,
@@ -232,9 +235,11 @@ pub fn build_index(text: &str) -> DocIndex {
                 if let Some((dst, start)) = open_links.pop() {
                     let source = start..span.end;
                     let target = parse_dst(&dst);
+                    let target_path_range = reference_target_path_range(text, &source, &target);
                     let target_id_range = reference_target_id_range(text, &source, &target);
                     references.push(Reference {
                         source,
+                        target_path_range,
                         target_id_range,
                         target,
                     });
@@ -584,6 +589,23 @@ fn reference_target_id_range(
     explicit_id_range(text, source, id)
 }
 
+fn reference_target_path_range(
+    text: &str,
+    source: &Range<usize>,
+    target: &RefTarget,
+) -> Option<Range<usize>> {
+    let path = match target {
+        RefTarget::External { path, .. } => path,
+        RefTarget::Internal { .. } | RefTarget::Url(_) => return None,
+    };
+    if path.is_empty() {
+        return None;
+    }
+    let source_text = text.get(source.clone())?;
+    let start = source_text.find(path)?;
+    Some(source.start + start..source.start + start + path.len())
+}
+
 /// A djot section being assembled while walking the event stream.
 struct SectionFrame {
     range_start: usize,
@@ -700,6 +722,25 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(ranges, ["Topic", "Section"]);
+    }
+
+    #[test]
+    fn index_tracks_reference_target_path_ranges() {
+        let text = "[internal](#Topic) [external](other.dj#Section) [file](notes/other.dj) [url](https://example.com)";
+        let index = build_index(text);
+
+        let ranges = index
+            .references
+            .iter()
+            .filter_map(|reference| {
+                reference
+                    .target_path_range
+                    .clone()
+                    .map(|range| text[range].to_string())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(ranges, ["other.dj", "notes/other.dj"]);
     }
 
     #[test]
