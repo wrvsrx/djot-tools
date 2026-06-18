@@ -6,6 +6,7 @@
 //! (pandoc) convert at their own boundary — this crate never depends on those.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
@@ -114,6 +115,26 @@ pub struct RenameEdit {
 pub enum RenameTargetError {
     NotRenameable,
     ImplicitHeadingAnchor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathRenameTarget {
+    pub old_path: PathBuf,
+    pub range: Range<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathRenameEdit {
+    pub source_path: PathBuf,
+    pub range: Range<usize>,
+    pub replacement: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathRenameError {
+    NotRenameable,
+    NonDjotPath,
+    TargetNotIndexed,
 }
 
 /// Build the heading hierarchy for `text`.
@@ -513,6 +534,69 @@ impl Workspace {
         edits
     }
 
+    /// Resolve a file path link under `offset` to the indexed document it
+    /// targets. Only Djot file targets can be renamed this way.
+    pub fn path_rename_target_at(
+        &self,
+        path: &Path,
+        offset: usize,
+    ) -> Result<PathRenameTarget, PathRenameError> {
+        let path = normalize(path);
+        let reference = self
+            .reference_at(&path, offset)
+            .ok_or(PathRenameError::NotRenameable)?;
+        let range = reference
+            .target_path_range
+            .clone()
+            .ok_or(PathRenameError::NotRenameable)?;
+        if !contains_inclusive(&range, offset) {
+            return Err(PathRenameError::NotRenameable);
+        }
+
+        let target =
+            resolve_target(&path, &reference.target).ok_or(PathRenameError::NotRenameable)?;
+        if !is_djot_file_path(&target.path) {
+            return Err(PathRenameError::NonDjotPath);
+        }
+        if !self.contains(&target.path) {
+            return Err(PathRenameError::TargetNotIndexed);
+        }
+
+        Ok(PathRenameTarget {
+            old_path: target.path,
+            range,
+        })
+    }
+
+    /// Every link path range that should be replaced when moving a document
+    /// from `old_path` to `new_path`. The anchor fragment, if any, is preserved
+    /// because only the path range is edited.
+    pub fn path_rename_edits(&self, old_path: &Path, new_path: &Path) -> Vec<PathRenameEdit> {
+        let old_path = normalize(old_path);
+        let new_path = normalize(new_path);
+        let mut edits = Vec::new();
+
+        for (src, entry) in &self.docs {
+            for reference in &entry.index.references {
+                let Some(range) = &reference.target_path_range else {
+                    continue;
+                };
+                let Some(resolved) = resolve_target(src, &reference.target) else {
+                    continue;
+                };
+                if resolved.path == old_path {
+                    edits.push(PathRenameEdit {
+                        source_path: src.clone(),
+                        range: range.clone(),
+                        replacement: relative_link_path(src, &new_path),
+                    });
+                }
+            }
+        }
+
+        edits
+    }
+
     /// Diagnostics for unresolved file and anchor references in one loaded
     /// document. URLs are intentionally ignored.
     pub fn diagnostics_for(&self, path: &Path) -> Vec<AnalysisDiagnostic> {
@@ -567,6 +651,65 @@ fn is_djot_path(path: &str) -> bool {
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext == "dj" || ext == "djot")
+}
+
+fn is_djot_file_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext == "dj" || ext == "djot")
+}
+
+fn contains_inclusive(range: &Range<usize>, offset: usize) -> bool {
+    range.start <= offset && offset <= range.end
+}
+
+fn relative_link_path(from_file: &Path, target: &Path) -> String {
+    relative_path(from_file.parent().unwrap_or_else(|| Path::new("")), target)
+        .display()
+        .to_string()
+}
+
+fn relative_path(base: &Path, target: &Path) -> PathBuf {
+    let base = normalize(base);
+    let target = normalize(target);
+    let base_components = path_components(&base);
+    let target_components = path_components(&target);
+
+    if base_components.first() != target_components.first() {
+        return target;
+    }
+
+    let common_len = base_components
+        .iter()
+        .zip(target_components.iter())
+        .take_while(|(base, target)| base == target)
+        .count();
+
+    let mut out = PathBuf::new();
+    for _ in common_len..base_components.len() {
+        out.push("..");
+    }
+    for component in &target_components[common_len..] {
+        out.push(component);
+    }
+
+    if out.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        out
+    }
+}
+
+fn path_components(path: &Path) -> Vec<OsString> {
+    path.components()
+        .filter_map(|component| match component {
+            Component::CurDir => None,
+            Component::ParentDir => Some(OsString::from("..")),
+            Component::Normal(part) => Some(part.to_os_string()),
+            Component::RootDir => Some(OsString::from(std::path::MAIN_SEPARATOR.to_string())),
+            Component::Prefix(prefix) => Some(prefix.as_os_str().to_os_string()),
+        })
+        .collect()
 }
 
 fn explicit_id_range(text: &str, range: &Range<usize>, id: &str) -> Option<Range<usize>> {
@@ -873,6 +1016,63 @@ mod tests {
             Err(RenameTargetError::ImplicitHeadingAnchor)
         );
         assert!(ws.rename_edits(&b, "Topic").is_empty());
+    }
+
+    #[test]
+    fn workspace_resolves_path_rename_target_from_link_path() {
+        let a = PathBuf::from("/notes/a.dj");
+        let b = PathBuf::from("/notes/b.dj");
+        let doc_a = "# A\n\nsee [to B](b.dj#topic)\n";
+        let mut ws = Workspace::new();
+        ws.insert(a.clone(), doc_a.to_string());
+        ws.insert(b.clone(), "{#topic}\nTopic\n".to_string());
+
+        let target = ws
+            .path_rename_target_at(&a, doc_a.find("b.dj").unwrap())
+            .expect("path rename target");
+
+        assert_eq!(target.old_path, b);
+        assert_eq!(&doc_a[target.range], "b.dj");
+        assert_eq!(
+            ws.path_rename_target_at(&a, doc_a.find("topic").unwrap()),
+            Err(PathRenameError::NotRenameable)
+        );
+    }
+
+    #[test]
+    fn workspace_collects_path_rename_edits_with_relative_replacements() {
+        let a = PathBuf::from("/notes/a.dj");
+        let b = PathBuf::from("/notes/b.dj");
+        let c = PathBuf::from("/notes/sub/c.dj");
+        let renamed = PathBuf::from("/notes/renamed.dj");
+        let doc_a = "# A\n\n[topic](b.dj#topic)\n";
+        let doc_c = "# C\n\n[topic](../b.dj)\n";
+        let mut ws = Workspace::new();
+        ws.insert(a.clone(), doc_a.to_string());
+        ws.insert(b.clone(), "{#topic}\nTopic\n".to_string());
+        ws.insert(c.clone(), doc_c.to_string());
+
+        let mut edits = ws
+            .path_rename_edits(&b, &renamed)
+            .into_iter()
+            .map(|edit| {
+                let text = &ws.get(&edit.source_path).unwrap().text;
+                (
+                    edit.source_path,
+                    text[edit.range].to_string(),
+                    edit.replacement,
+                )
+            })
+            .collect::<Vec<_>>();
+        edits.sort_by(|a, b| a.0.cmp(&b.0));
+
+        assert_eq!(
+            edits,
+            vec![
+                (a, "b.dj".to_string(), "renamed.dj".to_string()),
+                (c, "../b.dj".to_string(), "../renamed.dj".to_string()),
+            ]
+        );
     }
 
     #[test]
