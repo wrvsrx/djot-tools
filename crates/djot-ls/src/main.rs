@@ -1070,7 +1070,7 @@ fn is_valid_link_path_rename(path: &str) -> bool {
 fn implicit_heading_rename_error() -> ResponseError {
     ResponseError::new(
         ErrorCode::INVALID_REQUEST,
-        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor and rename that instead.",
+        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor or rename the heading text.",
     )
 }
 

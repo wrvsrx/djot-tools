@@ -279,11 +279,11 @@ fn rename_rejects_implicit_heading_anchor() {
     let responses = run_session(&msgs);
     assert_eq!(
         response_error_message(&responses, 2),
-        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor and rename that instead."
+        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor or rename the heading text."
     );
     assert_eq!(
         response_error_message(&responses, 3),
-        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor and rename that instead."
+        "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor or rename the heading text."
     );
 }
 
