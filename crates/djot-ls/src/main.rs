@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{ControlFlow, Range as ByteRange};
 use std::path::{Path, PathBuf};
 
@@ -11,7 +11,7 @@ use async_lsp::tracing::TracingLayer;
 use async_lsp::{ClientSocket, ErrorCode, LanguageServer, ResponseError};
 use djot_core::{
     heading_outline, metadata_block, resolve_target, AnalysisDiagnostic, DiagnosticKind, Heading,
-    RefTarget, RenameTargetError, Workspace,
+    PathRenameError, RefTarget, RenameTargetError, Workspace,
 };
 use futures::future::BoxFuture;
 use jotdown::{Container, Event, Parser};
@@ -19,15 +19,17 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams, CompletionResponse,
     CompletionTextEdit, Diagnostic, DiagnosticSeverity, DidChangeConfigurationParams,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
-    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
-    HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams, Location,
-    MarkupContent, MarkupKind, NumberOrString, OneOf, Position, PrepareRenameResponse,
-    ProgressParams, ProgressParamsValue, PublishDiagnosticsParams, Range, ReferenceParams,
-    RenameOptions, RenameParams, ResourceOperationKind, ServerCapabilities, SymbolKind,
-    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
-    WorkDoneProgress, WorkDoneProgressBegin, WorkDoneProgressEnd, WorkDoneProgressOptions,
-    WorkDoneProgressReport, WorkspaceEdit,
+    DidSaveTextDocumentParams, DocumentChangeOperation, DocumentChanges, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
+    InitializedParams, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, PrepareRenameResponse, ProgressParams,
+    ProgressParamsValue, PublishDiagnosticsParams, Range, ReferenceParams, RenameFile,
+    RenameFileOptions, RenameOptions, RenameParams, ResourceOp, ResourceOperationKind,
+    ServerCapabilities, SymbolKind, TextDocumentEdit, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url, WorkDoneProgress,
+    WorkDoneProgressBegin, WorkDoneProgressEnd, WorkDoneProgressOptions, WorkDoneProgressReport,
+    WorkspaceEdit,
 };
 use tower::ServiceBuilder;
 use tracing::Level;
@@ -427,16 +429,33 @@ impl ServerState {
             return Ok(None);
         };
         let offset = position_to_offset(&entry.text, position);
-        let target = match self.workspace.rename_target_at(&from, offset) {
-            Ok(target) => target,
-            Err(RenameTargetError::NotRenameable) => return Ok(None),
+        match self.workspace.rename_target_at(&from, offset) {
+            Ok(target) => {
+                return Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+                    range: byte_range_to_lsp(&entry.text, &target.range),
+                    placeholder: target.id,
+                }));
+            }
+            Err(RenameTargetError::NotRenameable) => {}
             Err(RenameTargetError::ImplicitHeadingAnchor) => {
                 return Err(implicit_heading_rename_error());
             }
+        }
+
+        let target = match self.workspace.path_rename_target_at(&from, offset) {
+            Ok(target) => target,
+            Err(PathRenameError::NotRenameable) => return Ok(None),
+            Err(PathRenameError::NonDjotPath) => return Err(non_djot_path_rename_error()),
+            Err(PathRenameError::TargetNotIndexed) => return Err(unindexed_path_rename_error()),
         };
+        let placeholder = entry
+            .text
+            .get(target.range.clone())
+            .unwrap_or_default()
+            .to_string();
         Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
             range: byte_range_to_lsp(&entry.text, &target.range),
-            placeholder: target.id,
+            placeholder,
         }))
     }
 
@@ -446,10 +465,6 @@ impl ServerState {
         position: Position,
         new_name: String,
     ) -> Result<Option<WorkspaceEdit>, ResponseError> {
-        if !is_valid_anchor_id(&new_name) {
-            return Ok(None);
-        }
-
         let from = match uri.to_file_path() {
             Ok(path) => path,
             Err(()) => return Ok(None),
@@ -458,14 +473,29 @@ impl ServerState {
             return Ok(None);
         };
         let offset = position_to_offset(&entry.text, position);
-        let target = match self.workspace.rename_target_at(&from, offset) {
-            Ok(target) => target,
-            Err(RenameTargetError::NotRenameable) => return Ok(None),
+        match self.workspace.rename_target_at(&from, offset) {
+            Ok(target) => {
+                if !is_valid_anchor_id(&new_name) {
+                    return Ok(None);
+                }
+                return self.resolve_anchor_rename(&target.path, &target.id, new_name);
+            }
+            Err(RenameTargetError::NotRenameable) => {}
             Err(RenameTargetError::ImplicitHeadingAnchor) => {
                 return Err(implicit_heading_rename_error());
             }
-        };
-        let edits = self.workspace.rename_edits(&target.path, &target.id);
+        }
+
+        self.resolve_path_rename(&from, offset, new_name)
+    }
+
+    fn resolve_anchor_rename(
+        &self,
+        target_path: &Path,
+        target_id: &str,
+        new_name: String,
+    ) -> Result<Option<WorkspaceEdit>, ResponseError> {
+        let edits = self.workspace.rename_edits(target_path, target_id);
         if edits.is_empty() {
             return Ok(None);
         }
@@ -485,6 +515,111 @@ impl ServerState {
         }
 
         Ok(Some(WorkspaceEdit::new(changes)))
+    }
+
+    fn resolve_path_rename(
+        &self,
+        from: &Path,
+        offset: usize,
+        new_name: String,
+    ) -> Result<Option<WorkspaceEdit>, ResponseError> {
+        let target = match self.workspace.path_rename_target_at(from, offset) {
+            Ok(target) => target,
+            Err(PathRenameError::NotRenameable) => return Ok(None),
+            Err(PathRenameError::NonDjotPath) => return Err(non_djot_path_rename_error()),
+            Err(PathRenameError::TargetNotIndexed) => return Err(unindexed_path_rename_error()),
+        };
+
+        if !self.workspace_edit_capabilities.document_changes
+            || !self.workspace_edit_capabilities.rename_resource_operation
+        {
+            return Err(rename_file_capability_error());
+        }
+
+        let new_path = self.resolve_new_link_path(from, &new_name)?;
+        if new_path == target.old_path {
+            return Ok(None);
+        }
+        if self.workspace.contains(&new_path) || new_path.exists() {
+            return Err(rename_target_exists_error());
+        }
+
+        let old_uri = Url::from_file_path(&target.old_path)
+            .ok()
+            .ok_or_else(invalid_rename_path_error)?;
+        let new_uri = Url::from_file_path(&new_path)
+            .ok()
+            .ok_or_else(invalid_rename_path_error)?;
+        let mut operations = vec![DocumentChangeOperation::Op(ResourceOp::Rename(
+            RenameFile {
+                old_uri,
+                new_uri,
+                options: Some(RenameFileOptions {
+                    overwrite: Some(false),
+                    ignore_if_exists: Some(false),
+                }),
+                annotation_id: None,
+            },
+        ))];
+
+        let mut edits_by_path: BTreeMap<PathBuf, Vec<TextEdit>> = BTreeMap::new();
+        for edit in self
+            .workspace
+            .path_rename_edits(&target.old_path, &new_path)
+        {
+            let Some(entry) = self.workspace.get(&edit.source_path) else {
+                return Ok(None);
+            };
+            edits_by_path
+                .entry(edit.source_path)
+                .or_default()
+                .push(TextEdit::new(
+                    byte_range_to_lsp(&entry.text, &edit.range),
+                    edit.replacement,
+                ));
+        }
+
+        for (path, edits) in edits_by_path {
+            let Some(uri) = Url::from_file_path(&path).ok() else {
+                return Ok(None);
+            };
+            operations.push(DocumentChangeOperation::Edit(TextDocumentEdit {
+                text_document: OptionalVersionedTextDocumentIdentifier { uri, version: None },
+                edits: edits.into_iter().map(OneOf::Left).collect(),
+            }));
+        }
+
+        Ok(Some(WorkspaceEdit {
+            changes: None,
+            document_changes: Some(DocumentChanges::Operations(operations)),
+            change_annotations: None,
+        }))
+    }
+
+    fn resolve_new_link_path(&self, from: &Path, new_name: &str) -> Result<PathBuf, ResponseError> {
+        if !is_valid_link_path_rename(new_name) {
+            return Err(invalid_rename_path_error());
+        }
+        let target = resolve_target(
+            from,
+            &RefTarget::External {
+                path: new_name.to_string(),
+                id: None,
+            },
+        )
+        .ok_or_else(invalid_rename_path_error)?;
+        if !is_djot_file(&target.path) {
+            return Err(non_djot_path_rename_error());
+        }
+        if !self.workspace_roots.is_empty()
+            && !self
+                .workspace_roots
+                .iter()
+                .any(|root| target.path.starts_with(root))
+        {
+            return Err(rename_target_outside_workspace_error());
+        }
+        Ok(target.path)
     }
 
     fn resolve_hover(&mut self, uri: &Url, position: Position) -> Option<Hover> {
@@ -917,10 +1052,60 @@ fn is_valid_anchor_id(id: &str) -> bool {
     !id.is_empty() && !id.contains('#') && !id.chars().any(char::is_whitespace)
 }
 
+fn is_valid_link_path_rename(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains('#')
+        && !path.contains("://")
+        && !path.starts_with("mailto:")
+        && Path::new(path).is_relative()
+}
+
 fn implicit_heading_rename_error() -> ResponseError {
     ResponseError::new(
         ErrorCode::INVALID_REQUEST,
         "Renaming implicit heading anchors is not supported yet; add an explicit {#id} anchor and rename that instead.",
+    )
+}
+
+fn rename_file_capability_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Renaming link paths requires client support for workspace documentChanges and rename resource operations.",
+    )
+}
+
+fn invalid_rename_path_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_PARAMS,
+        "Rename path must be a relative Djot file path without a fragment.",
+    )
+}
+
+fn non_djot_path_rename_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Only Djot file links can be renamed.",
+    )
+}
+
+fn unindexed_path_rename_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Cannot rename a link path whose target is not indexed in the workspace.",
+    )
+}
+
+fn rename_target_exists_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Cannot rename link path because the target path already exists.",
+    )
+}
+
+fn rename_target_outside_workspace_error() -> ResponseError {
+    ResponseError::new(
+        ErrorCode::INVALID_REQUEST,
+        "Cannot rename link path outside the workspace.",
     )
 }
 
