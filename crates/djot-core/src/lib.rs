@@ -43,6 +43,9 @@ pub struct Anchor {
     pub range: Range<usize>,
     /// Byte span of the anchor id/name that should be replaced by rename.
     pub rename_range: Range<usize>,
+    /// Whether the id is explicit source syntax (`{#id}`) rather than an
+    /// implicit id generated from heading text.
+    pub explicit: bool,
 }
 
 /// A link in the document and what it points at.
@@ -102,6 +105,12 @@ pub struct RenameTarget {
 pub struct RenameEdit {
     pub path: PathBuf,
     pub range: Range<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameTargetError {
+    NotRenameable,
+    ImplicitHeadingAnchor,
 }
 
 /// Build the heading hierarchy for `text`.
@@ -189,6 +198,7 @@ pub fn build_index(text: &str) -> DocIndex {
                     anchors.entry(id).or_insert_with(|| Anchor {
                         range: span.clone(),
                         rename_range,
+                        explicit: true,
                     });
                 }
                 if let Container::Link(dst, _) = container {
@@ -206,12 +216,15 @@ pub fn build_index(text: &str) -> DocIndex {
             Event::End(Container::Heading { .. }) => {
                 if let Some(heading) = open_headings.pop() {
                     let range = heading.start..span.end;
-                    let rename_range = explicit_id_range(text, &range, &heading.id)
+                    let explicit_range = explicit_id_range(text, &range, &heading.id);
+                    let explicit = explicit_range.is_some();
+                    let rename_range = explicit_range
                         .or(heading.text_range)
                         .unwrap_or_else(|| range.clone());
                     anchors.entry(heading.id).or_insert_with(|| Anchor {
                         range,
                         rename_range,
+                        explicit,
                     });
                 }
             }
@@ -416,25 +429,43 @@ impl Workspace {
 
     /// Resolve the anchor symbol under `offset`, either from the anchor
     /// declaration itself or from an editable link target that points to it.
-    pub fn rename_target_at(&self, path: &Path, offset: usize) -> Option<RenameTarget> {
+    pub fn rename_target_at(
+        &self,
+        path: &Path,
+        offset: usize,
+    ) -> Result<RenameTarget, RenameTargetError> {
         let path = normalize(path);
         if let Some((id, anchor)) = self.anchor_at(&path, offset) {
-            return Some(RenameTarget {
+            if !anchor.explicit {
+                return Err(RenameTargetError::ImplicitHeadingAnchor);
+            }
+            return Ok(RenameTarget {
                 path,
                 id: id.to_string(),
                 range: anchor.rename_range.clone(),
             });
         }
 
-        let reference = self.reference_at(&path, offset)?;
-        let target = resolve_target(&path, &reference.target)?;
-        let id = target.id?;
-        self.anchor(&target.path, &id)?;
+        let reference = self
+            .reference_at(&path, offset)
+            .ok_or(RenameTargetError::NotRenameable)?;
+        let target =
+            resolve_target(&path, &reference.target).ok_or(RenameTargetError::NotRenameable)?;
+        let id = target.id.ok_or(RenameTargetError::NotRenameable)?;
+        let anchor = self
+            .anchor(&target.path, &id)
+            .ok_or(RenameTargetError::NotRenameable)?;
+        if !anchor.explicit {
+            return Err(RenameTargetError::ImplicitHeadingAnchor);
+        }
 
-        Some(RenameTarget {
+        Ok(RenameTarget {
             path: target.path,
             id,
-            range: reference.target_id_range.clone()?,
+            range: reference
+                .target_id_range
+                .clone()
+                .ok_or(RenameTargetError::NotRenameable)?,
         })
     }
 
@@ -446,10 +477,15 @@ impl Workspace {
         let mut edits = Vec::new();
 
         if let Some(anchor) = self.anchor(&target, id) {
+            if !anchor.explicit {
+                return Vec::new();
+            }
             edits.push(RenameEdit {
                 path: target.clone(),
                 range: anchor.rename_range.clone(),
             });
+        } else {
+            return Vec::new();
         }
 
         for (src, entry) in &self.docs {
@@ -640,9 +676,11 @@ mod tests {
 
         let heading = &index.anchors["My-Heading"];
         assert_eq!(&text[heading.rename_range.clone()], "My Heading");
+        assert!(!heading.explicit);
 
         let explicit = &index.anchors["custom"];
         assert_eq!(&text[explicit.rename_range.clone()], "custom");
+        assert!(explicit.explicit);
     }
 
     #[test]
@@ -728,39 +766,39 @@ mod tests {
     fn workspace_resolves_rename_target_from_anchor_or_reference() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
-        let doc_a = "# A\n\nsee [to B](b.dj#Topic)\n";
-        let doc_b = "# Topic\n";
+        let doc_a = "# A\n\nsee [to B](b.dj#topic)\n";
+        let doc_b = "{#topic}\nTopic\n";
         let mut ws = Workspace::new();
         ws.insert(a.clone(), doc_a.to_string());
         ws.insert(b.clone(), doc_b.to_string());
 
         let from_anchor = ws
-            .rename_target_at(&b, doc_b.find("Topic").unwrap())
+            .rename_target_at(&b, doc_b.find("topic").unwrap())
             .expect("rename target from anchor");
         assert_eq!(from_anchor.path, b);
-        assert_eq!(from_anchor.id, "Topic");
-        assert_eq!(&doc_b[from_anchor.range], "Topic");
+        assert_eq!(from_anchor.id, "topic");
+        assert_eq!(&doc_b[from_anchor.range], "topic");
 
         let from_reference = ws
-            .rename_target_at(&a, doc_a.find("Topic").unwrap())
+            .rename_target_at(&a, doc_a.find("topic").unwrap())
             .expect("rename target from reference");
         assert_eq!(from_reference.path, PathBuf::from("/notes/b.dj"));
-        assert_eq!(from_reference.id, "Topic");
-        assert_eq!(&doc_a[from_reference.range], "Topic");
+        assert_eq!(from_reference.id, "topic");
+        assert_eq!(&doc_a[from_reference.range], "topic");
     }
 
     #[test]
     fn workspace_collects_rename_edits() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
-        let doc_a = "# A\n\n[local](#A) [other](b.dj#Topic) [file](b.dj)\n";
-        let doc_b = "# Topic\n\n[back](../notes/a.dj#A)\n";
+        let doc_a = "# A\n\n[local](#A) [other](b.dj#topic) [file](b.dj)\n";
+        let doc_b = "{#topic}\nTopic\n\n[back](../notes/a.dj#A)\n";
         let mut ws = Workspace::new();
         ws.insert(a.clone(), doc_a.to_string());
         ws.insert(b.clone(), doc_b.to_string());
 
         let mut edits = ws
-            .rename_edits(&b, "Topic")
+            .rename_edits(&b, "topic")
             .into_iter()
             .map(|edit| {
                 let text = &ws.get(&edit.path).unwrap().text;
@@ -771,8 +809,29 @@ mod tests {
 
         assert_eq!(
             edits,
-            vec![(a, "Topic".to_string()), (b, "Topic".to_string())]
+            vec![(a, "topic".to_string()), (b, "topic".to_string())]
         );
+    }
+
+    #[test]
+    fn workspace_rejects_rename_for_implicit_heading_anchor() {
+        let a = PathBuf::from("/notes/a.dj");
+        let b = PathBuf::from("/notes/b.dj");
+        let doc_a = "# A\n\nsee [to B](b.dj#Topic)\n";
+        let doc_b = "# Topic\n";
+        let mut ws = Workspace::new();
+        ws.insert(a.clone(), doc_a.to_string());
+        ws.insert(b.clone(), doc_b.to_string());
+
+        assert_eq!(
+            ws.rename_target_at(&b, doc_b.find("Topic").unwrap()),
+            Err(RenameTargetError::ImplicitHeadingAnchor)
+        );
+        assert_eq!(
+            ws.rename_target_at(&a, doc_a.find("Topic").unwrap()),
+            Err(RenameTargetError::ImplicitHeadingAnchor)
+        );
+        assert!(ws.rename_edits(&b, "Topic").is_empty());
     }
 
     #[test]
