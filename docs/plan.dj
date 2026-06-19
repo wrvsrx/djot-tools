@@ -98,62 +98,42 @@ metadata, text, and future semantic fields.
   - [ ] consider indexed prefilters for path prefixes, titles, direct referrers,
     and transitive referrers
 
-# Future: note/task semantics
+# Future: note/task tooling
 
-Keep the project centered on Djot documents and layer optional note/task
-semantics on top of normal Djot syntax. Notes are the source of truth; taskwarrior
-or calendar synchronization is not a goal for now.
+Keep the project centered on Djot documents and layer optional note/task tooling
+on top of normal Djot syntax. Notes are the source of truth; taskwarrior or
+calendar synchronization is not a goal for now. Current task semantics are
+defined in `docs/semantics.dj`; future work here is implementation and editor
+support.
 
-- [ ] Extract lightweight tasks from native Djot task list items:
+- [ ] Extract tasks from `task` divs:
 
-  ``` djot
-  - [ ] Write parser
-  - [x] Dump jotdown events
-  ```
+  ```` djot
+  {#write-task-model done="2026-06-19T21:30:00+08:00"}
+  ::: task
+  Define the first task semantic model.
 
-  - [ ] map `[ ]` to `todo` and `[x]` / `[X]` to `done`
-  - [ ] capture the task item range, checkbox marker range, and first paragraph
-    text as the task title
-  - [ ] expose tasks through `djot-core` without adding LSP-specific types
+  It should keep completion metadata separate from the task body.
+  :::
+  ````
 
-- [ ] Support structured tasks with a `task` div inside a task list item:
-
-  ``` djot
-  - [ ] {#write-task-model due=2026-06-21 project=djot-tools}
-        ::: task
-        Define the first task semantic model.
-
-        It should keep checkbox status separate from task metadata.
-        :::
-  ```
-
-  - [ ] treat the checkbox as the task status
-  - [ ] treat the `task` div as the structured task body
-  - [ ] read the div attributes as task metadata (`id`, `due`, `scheduled`,
-    `project`, `tags`)
+  - [ ] identify `Container::Div { class: "task" }` as a task
+  - [ ] treat absence of `done` as unfinished
+  - [ ] treat presence of `done` as complete
+  - [ ] parse `done` only as a quoted RFC 3339 datetime
+  - [ ] report invalid `done` values as semantic diagnostics
+  - [ ] capture the task range, optional id, done value, title range, and body
+    range
   - [ ] use the first paragraph as the title and later blocks as details
-
-- [ ] Support list-level inheritance for grouped task metadata:
-
-  ``` djot
-  {.work project=djot-tools}
-  - [ ] Write task parser
-  - [ ] {#task-export due=2026-06-23}
-        ::: task
-        Export task list data.
-        :::
-  ```
-
-  - [ ] inherit list attributes into child tasks
-  - [ ] let task-level attributes override inherited attributes
-  - [ ] keep checkbox status local to each task
+  - [ ] expose tasks through `djot-core` without adding LSP-specific types
 
 - [ ] Add editor/tooling affordances once the core task model exists:
 
-  - [ ] hover summary for task status, id, due date, project, and title
+  - [ ] hover summary for completion state, id, done datetime, and title
   - [ ] document symbols for tasks
-  - [ ] code action to toggle `[ ]` / `[x]`
-  - [ ] filter tasks by status/project/due fields in `djot-filter`
+  - [ ] code action to add/remove `done`
+  - [ ] code action to convert a native Djot task list item into a task div
+  - [ ] filter tasks by completion state and done datetime in `djot-filter`
 
 # Notes
 

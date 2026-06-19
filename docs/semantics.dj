@@ -9,8 +9,8 @@ This document records the conventions that `djot-tools` layers on top of Djot
 syntax. They are project semantics, not additions to Djot syntax itself.
 Other Djot tools may parse the same source without applying these rules.
 
-Planned note/task semantics are tracked in `docs/plan.dj`; they are not part of
-the current semantics described here.
+Future note semantics and task tooling are tracked in `docs/plan.dj`; they are
+not part of the current semantics described here.
 
 # Djot documents
 
@@ -109,13 +109,59 @@ For Djot semantic references:
 File-only Djot references name a document, not an anchor. They can resolve to
 the target document, but they do not participate in anchor reference queries.
 
+# Tasks
+
+A task is a Djot div whose class is exactly `task`:
+
+```` djot
+::: task
+Write the task parser.
+
+Optional details.
+:::
+````
+
+Tasks are unfinished by default. A task is complete when the div has a `done`
+attribute:
+
+```` djot
+{#write-task-parser done="2026-06-19T21:30:00+08:00"}
+::: task
+Write the task parser.
+
+Optional details.
+:::
+````
+
+The `done` value must be a quoted RFC 3339 datetime. Date-only values such as
+`done=2026-06-19`, quoted date-only values such as `done="2026-06-19"`, and
+non-RFC-3339 datetime strings are invalid task metadata.
+
+The task id is optional. When present, it is just the normal Djot explicit id
+for the div, so the task also defines an anchor and can be targeted by regular
+Djot links.
+
+Current task fields are intentionally minimal:
+
+- `done`: an RFC 3339 datetime string recording when the task was completed.
+
+No other task metadata fields are currently defined. In particular, `status`,
+`due`, `scheduled`, `priority`, and `tags` are outside the current semantics.
+Native Djot task list items such as `- [ ] Write parser` and `- [x] Write
+tests` are also outside the current task model.
+
+The task title is the plain text content of the first paragraph inside the task
+div. Later blocks are task details.
+
 # Diagnostics
 
-The current semantic diagnostics are unresolved Djot references:
+The current semantic diagnostics are unresolved Djot references and invalid
+task metadata:
 
 - missing same-document anchors (`#id`)
 - missing `.dj` or `.djot` target files
 - missing anchors in `.dj` or `.djot` target files
+- task `done` attributes that are not quoted RFC 3339 datetimes
 
 External URLs, non-Djot file links, and directory links are outside these
 reference diagnostics.
