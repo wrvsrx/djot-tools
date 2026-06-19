@@ -136,6 +136,40 @@ fn completion_inside_link_destination_inserts_path() {
 }
 
 #[test]
+fn completion_from_subdirectory_inserts_relative_path() {
+    let dir = std::env::temp_dir().join("djot-ls-completion-relative-path-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("a")).unwrap();
+    std::fs::create_dir_all(dir.join("b")).unwrap();
+    let source = dir.join("b").join("b.dj");
+    let target = dir.join("a").join("a.dj");
+    let doc_source = "# B\n\n[Target";
+    std::fs::write(&source, doc_source).unwrap();
+    std::fs::write(
+        &target,
+        "{.metadata}\n``` toml\ntitle = \"Target A\"\n```\n\n# A\n",
+    )
+    .unwrap();
+
+    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
+    let source_uri = Url::from_file_path(&source).unwrap().to_string();
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/completion",
+               "params":{"textDocument":{"uri":source_uri},"position":{"line":2,"character":7}}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let item = completion_item(&responses, 2, "Target A");
+
+    assert_eq!(item["detail"], json!("../a/a.dj"));
+    assert_eq!(item["textEdit"]["newText"], json!("[Target A](../a/a.dj)"));
+}
+
+#[test]
 fn completion_inside_closed_empty_destination_inserts_path() {
     let dir = std::env::temp_dir().join("djot-ls-completion-closed-empty-path-test");
     let _ = std::fs::remove_dir_all(&dir);
