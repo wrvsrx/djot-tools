@@ -109,6 +109,7 @@ For Djot semantic references:
 File-only Djot references name a document, not an anchor. They can resolve to
 the target document, but they do not participate in anchor reference queries.
 
+{#Tasks}
 # Tasks
 
 A task is a Djot div whose class is exactly `task`:
