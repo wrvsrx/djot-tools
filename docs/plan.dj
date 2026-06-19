@@ -103,7 +103,7 @@ metadata, text, and future semantic fields.
 Keep the project centered on Djot documents and layer optional note/task tooling
 on top of normal Djot syntax. Notes are the source of truth; taskwarrior or
 calendar synchronization is not a goal for now. Current task semantics are
-defined in `docs/semantics.dj`; future work here is implementation and editor
+defined in [semantics](semantics.dj#Tasks); future work here is implementation and editor
 support.
 
 - [ ] Extract tasks from `task` divs:
