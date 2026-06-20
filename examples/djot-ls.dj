@@ -57,7 +57,8 @@ After applying the action, the result should look like a list item carrying a
 `created` timestamp and containing a `task` div.
 
 Place the cursor inside this unfinished task div and ask for code actions.
-`djot-ls` should offer "Mark task done".
+`djot-ls` should offer "Mark task done", inserting a `done` timestamp before
+the opening task fence.
 
 ::: task
 Complete this task from a code action.

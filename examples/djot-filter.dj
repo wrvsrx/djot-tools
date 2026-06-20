@@ -32,6 +32,9 @@ new `.dj` file from the current query.
 
 # Task queries
 
+This section includes plain task divs and the list-shaped task format generated
+by the `djot-ls` "Convert to task div" code action.
+
 ``` sh
 djot-filter tasks --root examples
 djot-filter tasks --root examples --query 'created != null && done == null'
@@ -45,6 +48,13 @@ Try a task query.
 
 This unfinished task should match `done == null`.
 :::
+
+- {created="2026-06-20T09:30:00+08:00"}
+  ::: task
+  Try the code-action task shape.
+
+  This task keeps metadata on the containing list item.
+  :::
 
 {created="2026-06-20T10:00:00+08:00" done="2026-06-20T11:00:00+08:00"}
 ::: task
