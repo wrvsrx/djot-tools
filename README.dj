@@ -58,10 +58,10 @@ AST, so you can hand it to pandoc for further conversion:
 djot-export doc.dj | pandoc -f json -o doc.pdf
 ```
 
-Document conventions become export transformations here: a leading
-`{.metadata}` toml block is lifted out of the rendered body (eventually folded
-into pandoc metadata) rather than printed as a code block. The djot-to-pandoc
-conversion currently covers a common subset of djot.
+Pandoc's native Djot reader handles the syntax conversion. `djot-export` then
+applies this project's export semantics: a `{.metadata}` toml block is lifted
+out of the rendered body and folded into pandoc metadata rather than printed as
+a code block.
 
 # Filter
 
@@ -128,8 +128,9 @@ A Cargo workspace with three crates:
   crates.
 - [`crates/djot-ls`](crates/djot-ls) -- the `djot-ls` LSP binary; it depends on
   `djot-core` and converts its byte-offset results to LSP types.
-- [`crates/djot-export`](crates/djot-export) -- the `djot-export` CLI; it
-  depends on `djot-core` and converts djot to a pandoc JSON AST.
+- [`crates/djot-export`](crates/djot-export) -- the `djot-export` CLI; it uses
+  Pandoc's native Djot reader and applies project-specific export semantics to
+  the resulting pandoc JSON AST.
 - [`crates/djot-filter`](crates/djot-filter) -- the `djot-filter` CLI; it
   filters directories of djot documents by references and string metadata.
 

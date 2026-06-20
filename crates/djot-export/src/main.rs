@@ -1,367 +1,215 @@
 //! `djot-export`: convert a djot document to a [pandoc] JSON AST on stdout, so
 //! it can be piped into pandoc (`djot-export doc.dj | pandoc -f json -o doc.pdf`).
 //!
-//! This is where djot-ls's conventions become document semantics for export:
-//! the `{.metadata}` toml block is lifted out of the body (and, eventually,
-//! folded into pandoc `Meta`) rather than rendered as a literal code block.
-//!
-//! The converter currently covers a common subset of djot; unhandled containers
-//! are transparently flattened so output is always valid pandoc JSON.
+//! Pandoc's native djot reader owns the syntax conversion. This binary applies
+//! `djot-tools` export semantics on top of the resulting Pandoc AST: the first
+//! `{.metadata}` TOML code block is folded into Pandoc metadata and removed
+//! from the rendered body.
 //!
 //! [pandoc]: https://pandoc.org
 
-use std::io::Read;
-use std::process::ExitCode;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::process::{Command, ExitCode, Stdio};
 
-use jotdown::{Container, Event, ListKind, Parser};
-use serde_json::{json, Value};
-
-/// pandoc-types API version this output targets (matches pandoc 3.7).
-const API_VERSION: [u32; 4] = [1, 23, 1, 1];
+use pandoc_types::definition::{Attr, Block, MetaValue, Pandoc};
 
 fn main() -> ExitCode {
-    let input = match std::env::args().nth(1) {
-        Some(path) => match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) => {
-                eprintln!("djot-export: cannot read {path}: {err}");
-                return ExitCode::FAILURE;
-            }
-        },
-        None => {
-            let mut buf = String::new();
-            if let Err(err) = std::io::stdin().read_to_string(&mut buf) {
-                eprintln!("djot-export: cannot read stdin: {err}");
-                return ExitCode::FAILURE;
-            }
-            buf
+    let input = match read_input() {
+        Ok(input) => input,
+        Err(err) => {
+            eprintln!("djot-export: {err}");
+            return ExitCode::FAILURE;
         }
     };
 
-    let ast = to_pandoc_json(&input);
-    println!("{}", ast);
-    ExitCode::SUCCESS
-}
-
-/// Convert djot `text` into a pandoc JSON AST document.
-fn to_pandoc_json(text: &str) -> Value {
-    json!({
-        "pandoc-api-version": API_VERSION,
-        "meta": build_meta(text),
-        "blocks": convert_blocks(text),
-    })
-}
-
-/// Fold the leading `{.metadata}` toml block into a pandoc `Meta` map. The block
-/// stays out of the rendered body (see `convert_blocks`); this is where its
-/// information is preserved instead of dropped.
-fn build_meta(text: &str) -> Value {
-    let table = djot_core::metadata_block(text)
-        .and_then(|toml_src| toml::from_str::<toml::Table>(&toml_src).ok());
-    match table {
-        Some(table) => Value::Object(
-            table
-                .iter()
-                .map(|(key, value)| (key.clone(), toml_to_meta(value)))
-                .collect(),
-        ),
-        None => json!({}),
+    match to_pandoc_json(&input) {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("djot-export: {err}");
+            ExitCode::FAILURE
+        }
     }
 }
 
-/// Convert a toml value into a pandoc `MetaValue` JSON node.
-fn toml_to_meta(value: &toml::Value) -> Value {
+fn read_input() -> Result<String, String> {
+    match std::env::args().nth(1) {
+        Some(path) => {
+            std::fs::read_to_string(&path).map_err(|err| format!("cannot read {path}: {err}"))
+        }
+        None => {
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .map_err(|err| format!("cannot read stdin: {err}"))?;
+            Ok(buf)
+        }
+    }
+}
+
+/// Convert djot `text` into a Pandoc JSON AST document.
+fn to_pandoc_json(text: &str) -> Result<String, String> {
+    let json = pandoc_json_from_djot(text)?;
+    let mut document: Pandoc =
+        serde_json::from_str(&json).map_err(|err| format!("cannot parse pandoc JSON: {err}"))?;
+    fold_metadata_block(&mut document);
+    serde_json::to_string(&document).map_err(|err| format!("cannot write pandoc JSON: {err}"))
+}
+
+fn pandoc_json_from_djot(text: &str) -> Result<String, String> {
+    let mut child = Command::new("pandoc")
+        .args(["-f", "djot", "-t", "json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("cannot run pandoc: {err}"))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "cannot open pandoc stdin".to_string())?;
+    stdin
+        .write_all(text.as_bytes())
+        .map_err(|err| format!("cannot write djot to pandoc: {err}"))?;
+    drop(stdin);
+
+    let output = child
+        .wait_with_output()
+        .map_err(|err| format!("cannot wait for pandoc: {err}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let message = stderr.trim();
+        return Err(if message.is_empty() {
+            format!("pandoc exited with {}", output.status)
+        } else {
+            format!("pandoc exited with {}: {message}", output.status)
+        });
+    }
+
+    String::from_utf8(output.stdout).map_err(|err| format!("pandoc wrote non-UTF-8 JSON: {err}"))
+}
+
+fn fold_metadata_block(document: &mut Pandoc) {
+    let mut found = None;
+    document.blocks.retain(|block| {
+        if found.is_none() {
+            if let Block::CodeBlock(attr, text) = block {
+                if has_class(attr, djot_core::METADATA_CLASS) {
+                    found = Some(text.clone());
+                    return false;
+                }
+            }
+        }
+        true
+    });
+
+    let Some(metadata) = found else {
+        return;
+    };
+    let Ok(table) = toml::from_str::<toml::Table>(&metadata) else {
+        return;
+    };
+    for (key, value) in table {
+        document.meta.insert(key, toml_to_meta(value));
+    }
+}
+
+fn has_class(attr: &Attr, class: &str) -> bool {
+    attr.classes.iter().any(|candidate| candidate == class)
+}
+
+fn toml_to_meta(value: toml::Value) -> MetaValue {
     match value {
-        toml::Value::String(s) => json!({ "t": "MetaString", "c": s }),
-        toml::Value::Boolean(b) => json!({ "t": "MetaBool", "c": b }),
-        toml::Value::Integer(n) => json!({ "t": "MetaString", "c": n.to_string() }),
-        toml::Value::Float(n) => json!({ "t": "MetaString", "c": n.to_string() }),
-        toml::Value::Datetime(d) => json!({ "t": "MetaString", "c": d.to_string() }),
-        toml::Value::Array(items) => json!({
-            "t": "MetaList",
-            "c": items.iter().map(toml_to_meta).collect::<Vec<_>>(),
-        }),
-        toml::Value::Table(table) => json!({
-            "t": "MetaMap",
-            "c": table.iter().map(|(k, v)| (k.clone(), toml_to_meta(v))).collect::<serde_json::Map<_, _>>(),
-        }),
-    }
-}
-
-/// What a finished frame contributes to its parent.
-enum Built {
-    /// A single pandoc node.
-    Node(Value),
-    /// Splice the children straight into the parent (unhandled containers).
-    Splice(Vec<Value>),
-    /// Drop entirely (the metadata block).
-    Drop,
-}
-
-/// The kind of djot container a frame represents, with the data needed to build
-/// its pandoc node on close.
-enum Kind {
-    Root,
-    Section {
-        id: String,
-    },
-    Heading {
-        level: u32,
-    },
-    Para,
-    BlockQuote,
-    List {
-        ordered: bool,
-    },
-    ListItem,
-    Emph,
-    Strong,
-    Link {
-        dst: String,
-    },
-    /// Inline code / fenced code: text is accumulated rather than child nodes.
-    Verbatim,
-    CodeBlock {
-        lang: String,
-        metadata: bool,
-    },
-    /// Produces no output and discards its children (e.g. link reference
-    /// definitions, which pandoc resolves rather than rendering).
-    Drop,
-    Other,
-}
-
-/// An in-progress container while walking the event stream.
-struct Frame {
-    kind: Kind,
-    children: Vec<Value>,
-    /// Raw text, for verbatim/code containers.
-    text: String,
-}
-
-impl Frame {
-    fn new(kind: Kind) -> Self {
-        Frame {
-            kind,
-            children: Vec::new(),
-            text: String::new(),
+        toml::Value::String(s) => MetaValue::MetaString(s),
+        toml::Value::Boolean(b) => MetaValue::MetaBool(b),
+        toml::Value::Integer(n) => MetaValue::MetaString(n.to_string()),
+        toml::Value::Float(n) => MetaValue::MetaString(n.to_string()),
+        toml::Value::Datetime(d) => MetaValue::MetaString(d.to_string()),
+        toml::Value::Array(items) => {
+            MetaValue::MetaList(items.into_iter().map(toml_to_meta).collect())
         }
-    }
-
-    /// Whether plain `Str` events should accumulate as raw text (code) rather
-    /// than become `Str` inline nodes.
-    fn is_verbatim(&self) -> bool {
-        matches!(self.kind, Kind::Verbatim | Kind::CodeBlock { .. })
-    }
-
-    fn build(self) -> Built {
-        let attr_empty = json!(["", [], []]);
-        match self.kind {
-            // Root never reaches build(); handled in the loop.
-            Kind::Root => Built::Splice(self.children),
-            Kind::Section { id } => Built::Node(json!({
-                "t": "Div",
-                "c": [[id, ["section"], []], self.children],
-            })),
-            Kind::Heading { level } => Built::Node(json!({
-                "t": "Header",
-                "c": [level, attr_empty, self.children],
-            })),
-            Kind::Para => Built::Node(json!({ "t": "Para", "c": self.children })),
-            Kind::BlockQuote => Built::Node(json!({ "t": "BlockQuote", "c": self.children })),
-            Kind::List { ordered } => {
-                if ordered {
-                    Built::Node(json!({
-                        "t": "OrderedList",
-                        "c": [[1, {"t": "Decimal"}, {"t": "Period"}], self.children],
-                    }))
-                } else {
-                    Built::Node(json!({ "t": "BulletList", "c": self.children }))
-                }
-            }
-            // A list item is a raw [Block]; tighten a lone Para to Plain.
-            Kind::ListItem => {
-                let blocks = match self.children.as_slice() {
-                    [only] if only.get("t").and_then(Value::as_str) == Some("Para") => {
-                        vec![json!({ "t": "Plain", "c": only["c"].clone() })]
-                    }
-                    _ => self.children,
-                };
-                Built::Node(Value::Array(blocks))
-            }
-            Kind::Emph => Built::Node(json!({ "t": "Emph", "c": self.children })),
-            Kind::Strong => Built::Node(json!({ "t": "Strong", "c": self.children })),
-            Kind::Link { dst } => Built::Node(json!({
-                "t": "Link",
-                "c": [attr_empty, self.children, [dst, ""]],
-            })),
-            Kind::Verbatim => Built::Node(json!({ "t": "Code", "c": [attr_empty, self.text] })),
-            Kind::CodeBlock { lang, metadata } => {
-                if metadata {
-                    // The transformation: lift metadata out of the rendered body.
-                    Built::Drop
-                } else {
-                    let classes = if lang.is_empty() { vec![] } else { vec![lang] };
-                    Built::Node(json!({
-                        "t": "CodeBlock",
-                        "c": [["", classes, []], self.text],
-                    }))
-                }
-            }
-            Kind::Drop => Built::Drop,
-            Kind::Other => Built::Splice(self.children),
-        }
-    }
-}
-
-fn convert_blocks(text: &str) -> Vec<Value> {
-    let mut stack: Vec<Frame> = Vec::new();
-    let mut roots: Vec<Value> = Vec::new();
-
-    for (event, _span) in Parser::new(text).into_offset_iter() {
-        match event {
-            Event::Start(container, attrs) => {
-                let kind = match &container {
-                    Container::Document => Kind::Root,
-                    Container::Section { id } => Kind::Section { id: id.to_string() },
-                    Container::Heading { level, .. } => Kind::Heading {
-                        level: *level as u32,
-                    },
-                    Container::Paragraph => Kind::Para,
-                    Container::Blockquote => Kind::BlockQuote,
-                    Container::List { kind, .. } => Kind::List {
-                        ordered: matches!(kind, ListKind::Ordered { .. }),
-                    },
-                    Container::ListItem => Kind::ListItem,
-                    Container::Emphasis => Kind::Emph,
-                    Container::Strong => Kind::Strong,
-                    Container::Link(dst, _) => Kind::Link {
-                        dst: dst.to_string(),
-                    },
-                    Container::LinkDefinition { .. } => Kind::Drop,
-                    Container::Verbatim => Kind::Verbatim,
-                    Container::CodeBlock { language } => Kind::CodeBlock {
-                        lang: language.to_string(),
-                        metadata: djot_core::has_class(&attrs, djot_core::METADATA_CLASS),
-                    },
-                    _ => Kind::Other,
-                };
-                stack.push(Frame::new(kind));
-            }
-            Event::End(_) => {
-                let frame = stack.pop().expect("unbalanced End event");
-                if matches!(frame.kind, Kind::Root) {
-                    roots = frame.children;
-                    continue;
-                }
-                let built = frame.build();
-                let parent = stack.last_mut().expect("node outside document");
-                match built {
-                    Built::Node(node) => parent.children.push(node),
-                    Built::Splice(nodes) => parent.children.extend(nodes),
-                    Built::Drop => {}
-                }
-            }
-            Event::Str(s) => {
-                if let Some(top) = stack.last_mut() {
-                    if top.is_verbatim() {
-                        top.text.push_str(&s);
-                    } else {
-                        top.children.push(json!({ "t": "Str", "c": s.as_ref() }));
-                    }
-                }
-            }
-            Event::Softbreak => push_inline(&mut stack, json!({ "t": "SoftBreak" })),
-            Event::Hardbreak => push_inline(&mut stack, json!({ "t": "LineBreak" })),
-            // Smart punctuation: emit the resolved character as text.
-            Event::EnDash => push_inline(&mut stack, str_node("\u{2013}")),
-            Event::EmDash => push_inline(&mut stack, str_node("\u{2014}")),
-            Event::Ellipsis => push_inline(&mut stack, str_node("\u{2026}")),
-            Event::NonBreakingSpace => push_inline(&mut stack, str_node("\u{a0}")),
-            Event::ThematicBreak(_) => {
-                if let Some(top) = stack.last_mut() {
-                    top.children.push(json!({ "t": "HorizontalRule" }));
-                }
-            }
-            // Blanklines, symbols, footnotes, etc. are ignored for now.
-            _ => {}
-        }
-    }
-
-    roots
-}
-
-fn str_node(s: &str) -> Value {
-    json!({ "t": "Str", "c": s })
-}
-
-fn push_inline(stack: &mut [Frame], node: Value) {
-    if let Some(top) = stack.last_mut() {
-        if !top.is_verbatim() {
-            top.children.push(node);
-        }
+        toml::Value::Table(table) => MetaValue::MetaMap(
+            table
+                .into_iter()
+                .map(|(key, value)| (key, toml_to_meta(value)))
+                .collect::<HashMap<_, _>>(),
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pandoc_types::definition::Inline;
 
     #[test]
-    fn emits_valid_top_level_shape() {
-        let ast = to_pandoc_json("# Hi\n");
-        assert_eq!(ast["pandoc-api-version"], json!([1, 23, 1, 1]));
-        assert!(ast["blocks"].is_array());
+    fn metadata_is_folded_into_meta_and_removed_from_body() {
+        let mut document = Pandoc {
+            meta: HashMap::new(),
+            blocks: vec![
+                Block::CodeBlock(
+                    Attr {
+                        identifier: String::new(),
+                        classes: vec!["metadata".to_string(), "toml".to_string()],
+                        attributes: Vec::new(),
+                    },
+                    "title = \"X\"\ndraft = true\n".to_string(),
+                ),
+                Block::Header(1, Attr::default(), vec![Inline::Str("Heading".to_string())]),
+            ],
+        };
+
+        fold_metadata_block(&mut document);
+
+        assert_eq!(
+            document.meta.get("title"),
+            Some(&MetaValue::MetaString("X".to_string()))
+        );
+        assert_eq!(document.meta.get("draft"), Some(&MetaValue::MetaBool(true)));
+        assert!(matches!(document.blocks.as_slice(), [Block::Header(..)]));
     }
 
     #[test]
-    fn metadata_is_folded_into_meta_not_dropped() {
-        let ast =
-            to_pandoc_json("{.metadata}\n``` toml\ntitle = \"X\"\ndraft = true\n```\n\n# H\n");
-        assert_eq!(ast["meta"]["title"], json!({ "t": "MetaString", "c": "X" }));
-        assert_eq!(ast["meta"]["draft"], json!({ "t": "MetaBool", "c": true }));
-        // The block is folded into meta, so the body holds only the "# H" section.
-        assert_eq!(ast["blocks"].as_array().unwrap().len(), 1);
+    fn invalid_metadata_is_removed_without_failing() {
+        let mut document = Pandoc {
+            meta: HashMap::new(),
+            blocks: vec![Block::CodeBlock(
+                Attr {
+                    identifier: String::new(),
+                    classes: vec!["metadata".to_string()],
+                    attributes: Vec::new(),
+                },
+                "not = = toml\n".to_string(),
+            )],
+        };
+
+        fold_metadata_block(&mut document);
+
+        assert!(document.meta.is_empty());
+        assert!(document.blocks.is_empty());
     }
 
     #[test]
-    fn heading_becomes_section_div_with_header() {
-        let blocks = convert_blocks("# Title\n");
-        assert_eq!(blocks[0]["t"], "Div");
-        let inner = &blocks[0]["c"][1];
-        assert_eq!(inner[0]["t"], "Header");
-        assert_eq!(inner[0]["c"][0], 1);
-    }
+    fn non_metadata_code_block_is_kept() {
+        let mut document = Pandoc {
+            meta: HashMap::new(),
+            blocks: vec![Block::CodeBlock(
+                Attr {
+                    identifier: String::new(),
+                    classes: vec!["toml".to_string()],
+                    attributes: Vec::new(),
+                },
+                "title = \"X\"\n".to_string(),
+            )],
+        };
 
-    #[test]
-    fn smart_punctuation_becomes_text() {
-        let blocks = convert_blocks("a -- b ... c\n");
-        let text: String = blocks[0]["c"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|n| n["c"].as_str())
-            .collect();
-        assert!(text.contains('\u{2013}'), "en dash"); // --
-        assert!(text.contains('\u{2026}'), "ellipsis"); // ...
-    }
+        fold_metadata_block(&mut document);
 
-    #[test]
-    fn link_reference_definitions_do_not_leak() {
-        // The `[ref]: url` definition must not emit a stray Str at block level.
-        let blocks = convert_blocks("see [x][ref]\n\n[ref]: https://e.com\n");
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0]["t"], "Para");
-    }
-
-    #[test]
-    fn metadata_block_is_dropped_from_body() {
-        let blocks = convert_blocks("{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# H\n");
-        // Only the section Div for "# H" survives; the metadata block is gone.
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0]["t"], "Div");
-        // A non-metadata code block is kept.
-        let kept = convert_blocks("``` toml\ntitle = \"x\"\n```\n");
-        assert_eq!(kept[0]["t"], "CodeBlock");
+        assert!(document.meta.is_empty());
+        assert!(matches!(document.blocks.as_slice(), [Block::CodeBlock(..)]));
     }
 }

@@ -7,7 +7,7 @@ A [Language Server](https://microsoft.github.io/language-server-protocol/) for
 
 The binary is `djot-ls`. It handles `.dj` / `.djot` files.
 
-*This README is generated from `README.dj` with this projects own exporter:*
+*This README is generated from `README.dj` with this project’s own exporter:*
 `djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/title-heading.lua --lua-filter=dev/strip-sections.lua > README.md`
 
 ## Features
@@ -55,10 +55,10 @@ AST, so you can hand it to pandoc for further conversion:
 djot-export doc.dj | pandoc -f json -o doc.pdf
 ```
 
-Document conventions become export transformations here: a leading
-`{.metadata}` toml block is lifted out of the rendered body (eventually folded
-into pandoc metadata) rather than printed as a code block. The djot-to-pandoc
-conversion currently covers a common subset of djot.
+Pandoc’s native Djot reader handles the syntax conversion. `djot-export` then
+applies this project’s export semantics: a `{.metadata}` toml block is lifted
+out of the rendered body and folded into pandoc metadata rather than printed as
+a code block.
 
 ## Filter
 
@@ -76,7 +76,7 @@ djot-filter notes --root notes --query 'path.startsWith("docs/")' --interactive
 context exposes `path`, `title`, `directly_referenced_by`, and
 `transitively_referenced_by`; reference lists contain root-relative paths, and
 the transitive list includes direct referrers. `--interactive` opens the
-filtered results in skim; skim matches against each files path and full text,
+filtered results in skim; skim matches against each file’s path and full text,
 previews the file content with basic Djot highlighting, and opens the selected
 files with `EDITOR`. In interactive mode, `ctrl-n` creates a new file from the
 current query, relative to `--root`, adds a `.dj` extension when the query has
@@ -125,8 +125,9 @@ A Cargo workspace with three crates:
   crates.
 - [`crates/djot-ls`](crates/djot-ls) – the `djot-ls` LSP binary; it depends on
   `djot-core` and converts its byte-offset results to LSP types.
-- [`crates/djot-export`](crates/djot-export) – the `djot-export` CLI; it
-  depends on `djot-core` and converts djot to a pandoc JSON AST.
+- [`crates/djot-export`](crates/djot-export) – the `djot-export` CLI; it uses
+  Pandoc’s native Djot reader and applies project-specific export semantics to
+  the resulting pandoc JSON AST.
 - [`crates/djot-filter`](crates/djot-filter) – the `djot-filter` CLI; it
   filters directories of djot documents by references and string metadata.
 

@@ -19,7 +19,8 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-# djot-export depends only on djot-core (no tokio), so this build is cheap.
+# djot-export depends only on djot-core and lightweight pandoc JSON types, so
+# this build is cheap.
 cargo build -q -p djot-export
 
 gen() {

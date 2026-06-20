@@ -10,7 +10,7 @@ instructions.
 
 A Language Server (LSP) for [Djot](https://djot.net), written in Rust. It parses documents with [`jotdown`](https://docs.rs/jotdown) and serves them over LSP using [`async-lsp`](https://docs.rs/async-lsp). The roadmap lives in `docs/plan.dj` (documentSymbol → definition → references → hover → diagnostics → completion → semantic tokens). `textDocument/documentSymbol` (nested headings), `textDocument/definition` (same-file and cross-file links), `textDocument/references` (backlinks), and `textDocument/hover` (target information) are implemented.
 
-This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that converts djot to a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`), and `djot-filter`, a CLI for filtering directories of djot documents with CEL predicates over path, title, and reverse references.
+This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared by more than one tool. Alongside the language server there is `djot-export`, a CLI that uses Pandoc's native Djot reader and applies project-specific export semantics to produce a pandoc JSON AST (`djot-export doc.dj | pandoc -f json -o doc.pdf`), and `djot-filter`, a CLI for filtering directories of djot documents with CEL predicates over path, title, and reverse references.
 
 ## Project layout
 
@@ -44,7 +44,7 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 - Test the core lib only: `cargo test -p djot-core`
 - Test the exporter only: `cargo test -p djot-export`
 - Test the filter only: `cargo test -p djot-filter`
-- Run exporter manually: `printf '# H\n' | cargo run -p djot-export -- | pandoc -f json -t markdown`
+- Run exporter manually: `printf '# H\n' | cargo run -p djot-export -- | pandoc -f json -t markdown` (requires `pandoc`)
 - Run filter manually: `cargo run -p djot-filter -- --root docs --query 'title.matches("semantics")'`
 - Filter referenced docs: `cargo run -p djot-filter -- --root notes --query '"index.dj" in directly_referenced_by'`
 - Build the Nix package: `nix build .`; the package name is `djot-tools` and
@@ -170,13 +170,17 @@ All binaries reuse `djot-core` without pulling in each other's types.
   indexed documents. It does no file I/O itself.
 - All ranges are `std::ops::Range<usize>` byte offsets. No lsp_types here.
 
-`crates/djot-export/src/main.rs` (bin `djot-export`, depends on `djot-core` + `jotdown` + `serde_json` + `toml`):
+`crates/djot-export/src/main.rs` (bin `djot-export`, depends on `djot-core` + `pandoc_types` + `serde_json` + `toml`; requires the `pandoc` executable at runtime):
 
-- Reads djot (file arg or stdin) and prints a pandoc JSON AST (`pandoc-api-version` `[1,23,1,1]`). Walks jotdown events with a `Frame` stack, mapping containers to pandoc nodes (sections → `Div`, headings → `Header`, lists, emphasis/strong, links, inline/fenced code, …); unhandled containers are spliced through so output stays valid. Covers a common subset only.
-- The conversion is **where conventions become export semantics**: a `{.metadata}` code block (via `djot_core::metadata_block`) is parsed as toml and folded into pandoc `Meta` (`build_meta`/`toml_to_meta`) instead of rendered in the body, so its information is preserved rather than dropped.
-- Unit tests live in the same file and cover output shape, metadata folding,
-  section/header conversion, smart punctuation, reference definitions, and
-  metadata-body removal.
+- Reads djot (file arg or stdin), invokes `pandoc -f djot -t json`, parses the
+  resulting pandoc JSON with `pandoc_types`, and prints the transformed pandoc
+  JSON AST.
+- This is **where conventions become export semantics**: the first
+  `{.metadata}` code block is parsed as toml and folded into pandoc `Meta`
+  instead of rendered in the body, so its information is preserved rather than
+  dropped. Pandoc owns the Djot syntax conversion.
+- Unit tests live in the same file and cover the pandoc AST metadata
+  transformation. The CLI round-trip requires `pandoc`.
 - Verify with a round-trip: `printf '# H\n' | ./target/debug/djot-export | pandoc -f json -t markdown`.
 
 `crates/djot-filter/src/main.rs` (bin `djot-filter`, depends on `djot-core` + `cel` + `clap` + `shlex` + `skim` + `toml`):

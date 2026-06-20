@@ -68,9 +68,9 @@ drift.
 Current `djot-export` usage and behavior are documented in
 [the README](../README.dj#Export). Remaining work:
 
-- [ ] broaden coverage: tables, footnotes, definition lists, images,
-  attribute (id/class) passthrough
 - [ ] richer metadata: render `author`/`date` (e.g. a byline), nested tables
+- [ ] grow `djot-export` from a single-document Pandoc JSON bridge into a
+  static-site publishing driver when workspace-level export semantics exist
 
 # Filter
 
