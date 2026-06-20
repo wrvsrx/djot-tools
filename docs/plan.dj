@@ -82,6 +82,15 @@ Current `djot-filter` usage and query context are documented in
 - [ ] consider indexed prefilters for path prefixes, titles, direct referrers,
   and transitive referrers
 
+# Analysis and caching
+
+- [ ] Consider a shared `djot-core::Analysis` model that collects anchors,
+  references, metadata, task records, and diagnostics from one document parse,
+  so `djot-ls` and `djot-filter` can reuse the same analysis shape.
+- [ ] Defer disk-backed analysis caching until parsing shows up as a real
+  bottleneck. If added, keep the cache limited to saved on-disk files and let
+  `djot-ls` maintain unsaved buffer state only in memory.
+
 # Future: note/task tooling
 
 Keep the project centered on Djot documents and layer optional note/task tooling
