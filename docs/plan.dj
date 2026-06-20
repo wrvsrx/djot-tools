@@ -81,9 +81,9 @@ metadata, text, and future semantic fields.
   project-specific query language from scratch
 
   ``` sh
-  djot-filter --query 'path.startsWith("docs/") && title.matches("semantics")'
-  djot-filter --query '"index.dj" in directly_referenced_by'
-  djot-filter --query '"index.dj" in transitively_referenced_by'
+  djot-filter notes --query 'path.startsWith("docs/") && title.matches("semantics")'
+  djot-filter notes --query '"index.dj" in directly_referenced_by'
+  djot-filter notes --query '"index.dj" in transitively_referenced_by'
   ```
 
   - [x] expose a conservative document record to CEL (`path`, `title`,

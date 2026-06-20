@@ -66,10 +66,10 @@ conversion currently covers a common subset of djot.
 match all filters. If no directory is given, it scans the current directory:
 
 ``` sh
-djot-filter --query 'title.matches("semantics")'
-djot-filter --root docs --query 'title.matches("semantics")'
-djot-filter --root notes --query '"index.dj" in transitively_referenced_by'
-djot-filter --root notes --query 'path.startsWith("docs/")' --interactive
+djot-filter notes --query 'title.matches("semantics")'
+djot-filter notes --root docs --query 'title.matches("semantics")'
+djot-filter notes --root notes --query '"index.dj" in transitively_referenced_by'
+djot-filter notes --root notes --query 'path.startsWith("docs/")' --interactive
 ```
 
 `--query EXPR` keeps files whose CEL expression evaluates to true. The query

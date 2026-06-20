@@ -6,7 +6,7 @@ use std::process::{Command, ExitCode};
 use std::sync::Arc;
 
 use cel::{Context, ExecutionError, Program, Value};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use djot_core::{metadata_block, resolve_target, tasks, Task, Workspace};
 use skim::prelude::*;
 
@@ -22,58 +22,60 @@ fn main() -> ExitCode {
         }
     };
 
-    if matches!(config.command, Some(CommandMode::Tasks)) {
-        let plan = match config.query.as_deref() {
-            Some(query) => match QueryPlan::compile(query) {
-                Ok(plan) => Some(plan),
-                Err(err) => {
-                    eprintln!("djot-filter: {err}");
-                    return ExitCode::FAILURE;
-                }
-            },
-            None => None,
-        };
-        if let Err(err) = print_tasks(&root, &docs, plan.as_ref()) {
-            eprintln!("djot-filter: {err}");
-            return ExitCode::FAILURE;
-        }
-        return ExitCode::SUCCESS;
-    }
-
-    let mut paths = docs.paths.clone();
-    if let Some(query) = &config.query {
-        let plan = match QueryPlan::compile(query) {
-            Ok(plan) => plan,
-            Err(err) => {
-                eprintln!("djot-filter: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
-        match retain_query_matches(&root, &docs, &mut paths, &plan) {
-            Ok(()) => {}
-            Err(err) => {
-                eprintln!("djot-filter: {err}");
-                return ExitCode::FAILURE;
-            }
-        }
-    }
-
-    paths.sort();
-    if config.interactive {
-        match run_interactive(&root, &paths, &docs.texts) {
-            Ok(action) => {
-                if let Err(err) = handle_interactive_action(&root, action) {
-                    eprintln!("djot-filter: {err}");
-                    return ExitCode::FAILURE;
+    match &config.command {
+        CommandMode::Notes(notes) => {
+            let mut paths = docs.paths.clone();
+            if let Some(query) = &config.query {
+                let plan = match QueryPlan::compile(query) {
+                    Ok(plan) => plan,
+                    Err(err) => {
+                        eprintln!("djot-filter: {err}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                match retain_query_matches(&root, &docs, &mut paths, &plan) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        eprintln!("djot-filter: {err}");
+                        return ExitCode::FAILURE;
+                    }
                 }
             }
-            Err(err) => {
+
+            paths.sort();
+            if notes.interactive {
+                match run_interactive(&root, &paths, &docs.texts) {
+                    Ok(action) => {
+                        if let Err(err) = handle_interactive_action(&root, action) {
+                            eprintln!("djot-filter: {err}");
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("djot-filter: {err}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            } else {
+                print_paths(paths.into_iter().map(|path| display_path(&root, &path)));
+            }
+        }
+        CommandMode::Tasks => {
+            let plan = match config.query.as_deref() {
+                Some(query) => match QueryPlan::compile(query) {
+                    Ok(plan) => Some(plan),
+                    Err(err) => {
+                        eprintln!("djot-filter: {err}");
+                        return ExitCode::FAILURE;
+                    }
+                },
+                None => None,
+            };
+            if let Err(err) = print_tasks(&root, &docs, plan.as_ref()) {
                 eprintln!("djot-filter: {err}");
                 return ExitCode::FAILURE;
             }
         }
-    } else {
-        print_paths(paths.into_iter().map(|path| display_path(&root, &path)));
     }
 
     ExitCode::SUCCESS
@@ -89,22 +91,28 @@ struct Config {
     #[arg(long, global = true, value_name = "DIR")]
     root: Option<PathBuf>,
 
-    /// Re-filter results interactively with skim.
-    #[arg(short, long)]
-    interactive: bool,
-
-    /// Keep files whose CEL predicate evaluates to true.
+    /// Keep records whose CEL predicate evaluates to true.
     #[arg(long, global = true, value_name = "EXPR")]
     query: Option<String>,
 
     #[command(subcommand)]
-    command: Option<CommandMode>,
+    command: CommandMode,
 }
 
 #[derive(Debug, Subcommand)]
 enum CommandMode {
+    /// Filter note files under the scanned directory.
+    Notes(NotesConfig),
+
     /// Print tasks found in scanned Djot files.
     Tasks,
+}
+
+#[derive(Debug, Args)]
+struct NotesConfig {
+    /// Re-filter results interactively with skim.
+    #[arg(short, long)]
+    interactive: bool,
 }
 
 struct LoadedDocs {
@@ -701,11 +709,30 @@ mod tests {
     fn root_defaults_to_current_directory() {
         let config = Config {
             root: None,
-            interactive: false,
             query: None,
-            command: None,
+            command: CommandMode::Notes(NotesConfig { interactive: false }),
         };
         assert_eq!(default_root(&config), absolute_path(Path::new(".")));
+    }
+
+    #[test]
+    fn notes_subcommand_accepts_root_query_and_interactive_after_subcommand() {
+        let config = Config::parse_from([
+            "djot-filter",
+            "notes",
+            "--root",
+            "notes",
+            "--query",
+            "title.matches('topic')",
+            "--interactive",
+        ]);
+
+        assert!(matches!(
+            config.command,
+            CommandMode::Notes(NotesConfig { interactive: true })
+        ));
+        assert_eq!(config.root.as_deref(), Some(Path::new("notes")));
+        assert_eq!(config.query.as_deref(), Some("title.matches('topic')"));
     }
 
     #[test]
@@ -719,9 +746,15 @@ mod tests {
             "done == null",
         ]);
 
-        assert!(matches!(config.command, Some(CommandMode::Tasks)));
+        assert!(matches!(config.command, CommandMode::Tasks));
         assert_eq!(config.root.as_deref(), Some(Path::new("notes")));
         assert_eq!(config.query.as_deref(), Some("done == null"));
+    }
+
+    #[test]
+    fn default_notes_command_is_removed() {
+        let err = Config::try_parse_from(["djot-filter", "--query", "true"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingSubcommand);
     }
 
     #[test]
