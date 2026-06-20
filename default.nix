@@ -1,21 +1,17 @@
 {
   pkgs ? import <nixpkgs> { },
   lib ? pkgs.lib,
-  rustPlatform ? pkgs.rustPlatform,
+  craneLib,
 }:
 
 let
   cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 in
-rustPlatform.buildRustPackage {
+craneLib.buildPackage {
   pname = "djot-tools";
   version = cargoToml.workspace.package.version;
 
-  src = lib.cleanSource ./.;
-
-  cargoLock = {
-    lockFile = ./Cargo.lock;
-  };
+  src = craneLib.cleanCargoSource ./.;
 
   meta = {
     description = "Language server and tools for Djot documents";
