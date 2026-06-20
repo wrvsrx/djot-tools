@@ -5,7 +5,7 @@
     nur-wrvsrx.url = "github:wrvsrx/nur-packages";
     nixpkgs.follows = "nur-wrvsrx/nixpkgs";
     flake-parts.follows = "nur-wrvsrx/flake-parts";
-    crane.url = "github:ipetkov/crane/v0.23.4";
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
