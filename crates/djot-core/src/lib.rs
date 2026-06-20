@@ -317,23 +317,21 @@ pub fn metadata_block(text: &str) -> Option<String> {
 pub fn tasks(text: &str) -> Vec<Task> {
     let mut tasks = Vec::new();
     let mut stack: Vec<TaskFrame> = Vec::new();
+    let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
 
     for (event, span) in Parser::new(text).into_offset_iter() {
         match event {
+            Event::Start(Container::ListItem | Container::TaskListItem { .. }, attrs) => {
+                list_item_metadata.push(TaskMetadata::from_attributes(&attrs));
+            }
             Event::Start(Container::Div { class }, attrs) if class == TASK_CLASS => {
-                let created = attrs
-                    .get_value("created")
-                    .map(|value| value.to_string())
-                    .filter(|value| is_rfc3339_datetime(value));
-                let done = attrs
-                    .get_value("done")
-                    .map(|value| value.to_string())
-                    .filter(|value| is_rfc3339_datetime(value));
+                let inherited = list_item_metadata.last();
+                let metadata = TaskMetadata::from_attributes_with_fallback(&attrs, inherited);
                 stack.push(TaskFrame {
                     range_start: span.start,
                     id: attrs.get_value("id").map(|value| value.to_string()),
-                    created,
-                    done,
+                    created: metadata.created,
+                    done: metadata.done,
                     capturing_title: false,
                     captured_title: false,
                     title_range: None,
@@ -377,6 +375,9 @@ pub fn tasks(text: &str) -> Vec<Task> {
                 if let Some(frame) = stack.pop() {
                     tasks.push(frame.into_task(span.end));
                 }
+            }
+            Event::End(Container::ListItem | Container::TaskListItem { .. }) => {
+                list_item_metadata.pop();
             }
             _ => {}
         }
@@ -835,6 +836,13 @@ fn reference_target_path_range(
     Some(source.start + start..source.start + start + path.len())
 }
 
+fn datetime_attribute(attrs: &Attributes, key: &str) -> Option<String> {
+    attrs
+        .get_value(key)
+        .map(|value| value.to_string())
+        .filter(|value| is_rfc3339_datetime(value))
+}
+
 fn is_rfc3339_datetime(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 20 {
@@ -944,6 +952,39 @@ struct TaskFrame {
     captured_title: bool,
     title_range: Option<Range<usize>>,
     title: String,
+}
+
+#[derive(Clone)]
+struct TaskMetadata {
+    created: Option<String>,
+    done: Option<String>,
+}
+
+impl TaskMetadata {
+    fn from_attributes(attrs: &Attributes) -> Self {
+        Self {
+            created: datetime_attribute(attrs, "created"),
+            done: datetime_attribute(attrs, "done"),
+        }
+    }
+
+    fn from_attributes_with_fallback(attrs: &Attributes, fallback: Option<&Self>) -> Self {
+        let own = Self::from_attributes(attrs);
+        Self {
+            created: match attrs.get_value("created") {
+                Some(_) => own.created,
+                None => own
+                    .created
+                    .or_else(|| fallback.and_then(|metadata| metadata.created.clone())),
+            },
+            done: match attrs.get_value("done") {
+                Some(_) => own.done,
+                None => own
+                    .done
+                    .or_else(|| fallback.and_then(|metadata| metadata.done.clone())),
+            },
+        }
+    }
 }
 
 impl TaskFrame {
@@ -1107,6 +1148,17 @@ mod tests {
                 .map(|range| text[range].to_string()),
             Some("Write parser.".to_string())
         );
+    }
+
+    #[test]
+    fn tasks_inherit_metadata_from_containing_list_item() {
+        let text = "- {created=\"2026-06-18T09:00:00Z\"}\n  ::: task\n  Write parser.\n  :::\n";
+        let found = tasks(text);
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].created.as_deref(), Some("2026-06-18T09:00:00Z"));
+        assert_eq!(found[0].done, None);
+        assert_eq!(found[0].title, "Write parser.");
     }
 
     #[test]

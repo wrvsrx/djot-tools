@@ -53,8 +53,8 @@ actions. `djot-ls` should offer "Convert to task div".
 
 - [ ] Convert this line into a task div.
 
-After applying the action, the result should look like a `task` div with a
-`created` timestamp.
+After applying the action, the result should look like a list item carrying a
+`created` timestamp and containing a `task` div.
 
 # Diagnostics
 

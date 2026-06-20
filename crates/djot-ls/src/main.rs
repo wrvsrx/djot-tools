@@ -1092,7 +1092,7 @@ fn task_list_item_conversion(
     Some(TaskListItemConversion {
         replace: line_start..line_end,
         replacement: format!(
-            "{indent}{{created=\"{created}\"}}\n{indent}::: task\n{indent}{title}\n{indent}:::"
+            "{indent}- {{created=\"{created}\"}}\n{indent}  ::: task\n{indent}  {title}\n{indent}  :::"
         ),
     })
 }

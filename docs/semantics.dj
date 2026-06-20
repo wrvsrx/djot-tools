@@ -135,6 +135,19 @@ Optional details.
 :::
 ````
 
+Task metadata may also be attached to the list item that directly contains the
+task div. This form is useful when converting native Djot task list items while
+preserving a list-shaped document:
+
+```` djot
+- {created="2026-06-18T09:00:00+08:00"}
+  ::: task
+  Write the task parser.
+  :::
+````
+
+Metadata on the `task` div takes precedence over inherited list item metadata.
+
 The `created` and `done` values must be quoted RFC 3339 datetimes. Date-only
 values such as `done=2026-06-19`, quoted date-only values such as
 `done="2026-06-19"`, and non-RFC-3339 datetime strings are invalid task

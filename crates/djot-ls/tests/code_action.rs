@@ -43,14 +43,14 @@ fn code_action_converts_native_task_list_item_to_task_div() {
     );
 
     let replacement = edit["newText"].as_str().expect("newText is not a string");
-    assert!(replacement.starts_with("{created=\""));
-    assert!(replacement.contains("\"}\n::: task\nWrite parser.\n:::"));
+    assert!(replacement.starts_with("- {created=\""));
+    assert!(replacement.contains("\"}\n  ::: task\n  Write parser.\n  :::"));
     assert_created_timestamp_shape(replacement);
 }
 
 fn assert_created_timestamp_shape(replacement: &str) {
     let timestamp = replacement
-        .strip_prefix("{created=\"")
+        .strip_prefix("- {created=\"")
         .and_then(|rest| rest.split_once("\"}"))
         .map(|(timestamp, _)| timestamp)
         .expect("missing created timestamp");
