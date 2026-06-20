@@ -1,0 +1,65 @@
+{.metadata}
+``` toml
+title = "djot-ls playground"
+```
+
+Use this file in an editor with `djot-ls` attached. It is arranged so common
+LSP operations have something concrete to act on.
+
+# Document symbols
+
+This section should appear in `textDocument/documentSymbol`.
+
+## Nested symbol
+
+This child heading should be nested under "Document symbols".
+
+# Definition, hover, and references
+
+Put the cursor on each link and try go-to-definition, hover, and find
+references:
+
+- Same-file heading: [Document symbols](#Document-symbols)
+- Same-file explicit anchor: [local anchor](#local-anchor)
+- Cross-file heading: [Exporter features](djot-export.dj#Exporter-features)
+- Cross-file file target: [Filter playground](djot-filter.dj)
+- Repeated reference: [Exporter features](djot-export.dj#Exporter-features)
+
+{#local-anchor}
+This paragraph has an explicit anchor. Rename the id `local-anchor` to update
+links that point to it.
+
+# Completion
+
+Try these edits in insert mode:
+
+- Start a new link label with `[` and complete `Exporter playground`.
+- Complete a path inside `[target](` with `djot-filter.dj`.
+- Complete an anchor after `[target](djot-export.dj#` with `Exporter-features`.
+- Complete a same-file anchor after `[target](#` with `Code-actions`.
+
+# Rename
+
+Place the cursor on `djot-export.dj` in this link and use rename to move the
+target path: [export file](djot-export.dj).
+
+Place the cursor on `local-anchor` in either the declaration above or this link
+and use rename: [local anchor](#local-anchor).
+
+# Code actions
+
+Place the cursor on this native Djot task list item and ask the editor for code
+actions. `djot-ls` should offer "Convert to task div".
+
+- [ ] Convert this line into a task div.
+
+After applying the action, the result should look like a `task` div with a
+`created` timestamp.
+
+# Diagnostics
+
+These links are intentionally broken so diagnostics have something to report:
+
+- Missing same-file anchor: [missing](#Missing-Anchor)
+- Missing file: [missing file](missing-target.dj)
+- Missing cross-file anchor: [missing heading](djot-export.dj#Missing-Heading)

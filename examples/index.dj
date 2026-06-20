@@ -1,0 +1,26 @@
+{.metadata}
+``` toml
+title = "djot-tools playground"
+```
+
+Open this directory as a workspace after building `target/debug/djot-ls`.
+This small set of documents is meant for manual testing and demos.
+
+# Start here
+
+- [Language server playground](djot-ls.dj)
+- [Exporter playground](djot-export.dj)
+- [Filter playground](djot-filter.dj)
+
+# Suggested commands
+
+``` sh
+cargo build
+djot-export examples/djot-export.dj | pandoc -f json -t markdown
+djot-filter notes --root examples --query 'title.matches("playground")'
+djot-filter notes --root examples --query '"index.dj" in directly_referenced_by'
+djot-filter tasks --root examples --query 'created != null && done == null'
+```
+
+The three linked files intentionally cross-reference each other so
+`djot-filter` reverse-reference queries have useful output.

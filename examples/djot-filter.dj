@@ -1,0 +1,60 @@
+{.metadata}
+``` toml
+title = "djot-filter playground"
+area = "examples"
+```
+
+This file demonstrates data that `djot-filter` can query: paths, metadata
+titles, reverse references, and task blocks.
+
+# Notes queries
+
+Try these from the repository root:
+
+``` sh
+djot-filter notes --root examples --query 'title.matches("playground")'
+djot-filter notes --root examples --query 'path.endsWith("djot-ls.dj")'
+djot-filter notes --root examples --query '"index.dj" in directly_referenced_by'
+djot-filter notes --root examples --query '"djot-ls.dj" in transitively_referenced_by'
+```
+
+`directly_referenced_by` and `transitively_referenced_by` contain
+root-relative paths of documents that link to the current document.
+
+# Interactive mode
+
+``` sh
+EDITOR=nvim djot-filter notes --root examples --interactive
+```
+
+In interactive mode, the preview is generated in memory and `ctrl-n` creates a
+new `.dj` file from the current query.
+
+# Task queries
+
+``` sh
+djot-filter tasks --root examples
+djot-filter tasks --root examples --query 'created != null && done == null'
+djot-filter tasks --root examples --query 'done != null'
+```
+
+{#try-task-query}
+{created="2026-06-20T09:00:00+08:00"}
+::: task
+Try a task query.
+
+This unfinished task should match `done == null`.
+:::
+
+{created="2026-06-20T10:00:00+08:00" done="2026-06-20T11:00:00+08:00"}
+::: task
+Read the filter results.
+
+This completed task should match `done != null`.
+:::
+
+# Cross references
+
+This file links back to [the index](index.dj) and to the
+[language server playground](djot-ls.dj#Definition-hover-and-references), so
+reverse-reference examples have more than one edge to inspect.

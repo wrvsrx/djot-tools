@@ -1,0 +1,53 @@
+{.metadata}
+``` toml
+title = "djot-export playground"
+author = "djot-tools"
+date = "2026-06-20"
+```
+
+# Exporter features
+
+This document exercises the common Djot subset that `djot-export` converts to
+pandoc JSON.
+
+Run:
+
+``` sh
+djot-export examples/djot-export.dj | pandoc -f json -t markdown
+```
+
+The leading `{.metadata}` block is folded into pandoc metadata instead of being
+rendered as body content.
+
+# Inline markup
+
+This paragraph contains *strong text*, _emphasis_, `inline code`, and a
+[link back to the index](index.dj).
+
+# Lists
+
+- first bullet
+- second bullet with a [cross-file reference](djot-ls.dj#Completion)
+
+1. first ordered step
+1. second ordered step
+
+# Quote and code
+
+> Djot source goes in; pandoc JSON comes out.
+
+``` rust
+fn main() {
+    println!("hello from djot-export");
+}
+```
+
+# Table-shaped text
+
+Tables are not the focus of the current exporter. Keep this section as plain
+paragraph content when checking unsupported syntax behavior.
+
+# Conclusion
+
+This heading is a target for completion and definition tests from
+[the language server playground](djot-ls.dj).
