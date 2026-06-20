@@ -1,2 +1,0 @@
-{ craneLib }:
-craneLib.devShell { }

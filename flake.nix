@@ -18,14 +18,22 @@
           { pkgs, ... }:
           let
             craneLib = inputs.crane.mkLib pkgs;
+            cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
           in
           {
-            packages.default = pkgs.callPackage ./default.nix {
-              inherit craneLib;
+            packages.default = craneLib.buildPackage {
+              pname = "djot-tools";
+              version = cargoToml.workspace.package.version;
+
+              src = craneLib.cleanCargoSource ./.;
+
+              meta = {
+                description = "Language server and tools for Djot documents";
+                license = pkgs.lib.licenses.mit;
+                mainProgram = "djot-ls";
+              };
             };
-            devShells.default = pkgs.callPackage ./shell.nix {
-              inherit craneLib;
-            };
+            devShells.default = craneLib.devShell { };
             formatter = pkgs.nixfmt-rfc-style;
           };
       }

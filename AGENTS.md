@@ -24,8 +24,8 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 - `docs/plan.dj` is the feature roadmap.
 - `docs/semantics.dj` describes the current project semantics layered on top of
   Djot syntax.
-- `default.nix` packages the workspace binaries as the `djot-tools` Nix
-  package. The version is read from `Cargo.toml` with `builtins.fromTOML`.
+- `flake.nix` packages the workspace binaries as the `djot-tools` Nix package
+  with crane. The version is read from `Cargo.toml` with `builtins.fromTOML`.
 - `examples/*.dj` are small manual test fixtures for outlines, links, and
   article-style documents.
 - `dev/` contains editor/dev helpers: Neovim LSP config, README export Lua
@@ -46,9 +46,8 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 - Run exporter manually: `printf '# H\n' | cargo run -p djot-export -- | pandoc -f json -t markdown`
 - Run filter manually: `cargo run -p djot-filter -- --root docs --query 'title.matches("semantics")'`
 - Filter referenced docs: `cargo run -p djot-filter -- --root notes --query '"index.dj" in directly_referenced_by'`
-- Build the Nix package: `nix build .` (flake) or `nix-build` (default.nix);
-  the package name is `djot-tools` and installs `djot-ls`, `djot-export`, and
-  `djot-filter`.
+- Build the Nix package: `nix build .`; the package name is `djot-tools` and
+  installs `djot-ls`, `djot-export`, and `djot-filter`.
 - The dev environment is a Nix flake (`use_flake .` via direnv); `dev/envrc` is symlinked to the repo-root `.envrc`.
 - Git hooks live in `dev/hooks/`; enable them once per clone with `git config core.hooksPath dev/hooks`. The `pre-commit` hook checks that `README.md` is still in sync with `README.dj` whenever either is committed.
 
