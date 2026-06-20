@@ -48,6 +48,10 @@ and use rename: [local anchor](#local-anchor).
 
 # Code actions
 
+Open [the metadata scratchpad](metadata-scratch.dj), place the cursor at the
+start of the document, and ask the editor for code actions. `djot-ls` should
+offer "Add metadata".
+
 Place the cursor on this native Djot task list item and ask the editor for code
 actions. `djot-ls` should offer "Convert to task div".
 

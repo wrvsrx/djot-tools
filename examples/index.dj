@@ -9,6 +9,7 @@ This small set of documents is meant for manual testing and demos.
 # Start here
 
 - [Language server playground](djot-ls.dj)
+- [Metadata code-action scratchpad](metadata-scratch.dj)
 - [Exporter playground](djot-export.dj)
 - [Filter playground](djot-filter.dj)
 

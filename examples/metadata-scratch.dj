@@ -1,0 +1,17 @@
+This file intentionally starts without a `{.metadata}` block.
+
+Open it with `djot-ls`, put the cursor at the beginning of the file or on this
+first paragraph before any earlier block exists, and ask the editor for code
+actions. `djot-ls` should offer "Add metadata" and insert a leading metadata
+block with `title = "metadata-scratch"`.
+
+# After trying the action
+
+The file should begin with:
+
+```` djot
+{.metadata}
+``` toml
+title = "metadata-scratch"
+```
+````

@@ -123,6 +123,22 @@ unimplemented semantics, including task/note semantics, belong in
   only future work, open design questions, or very brief completed-status
   markers when useful for roadmap context.
 
+## Feature update checklist
+
+When implementing a new feature, update the adjacent project materials in the
+same change set when they apply:
+
+- add or adjust the narrowest relevant tests, using `djot-core` unit tests for
+  protocol-agnostic semantics and black-box `djot-ls` tests for LSP behavior;
+- update `docs/semantics.dj` only when the feature changes shared, implemented
+  Djot semantics, not merely an LSP/CLI presentation of existing semantics;
+- update `README.dj` for current user-facing commands, behavior, or examples,
+  then regenerate `README.md` instead of editing it by hand;
+- update `docs/plan.dj` for roadmap status, remaining work, or open design
+  questions;
+- update `examples/*.dj` when the feature benefits from a manual playground,
+  demo fixture, completion target, or cross-reference target.
+
 ## Build gotcha: do not bump tokio
 
 The crates index mirror in this environment lags and lacks `tokio-macros 2.7.0`, so resolving tokio ≥ 1.52 fails. `Cargo.toml` allows `tokio = "1.51.0"` (caret) but `Cargo.lock` holds it at exactly 1.51.0. **Do not run `cargo update` / `cargo update -p tokio` expecting a newer tokio** — it will try 1.52.x and fail. Keep the locked 1.51.0 until the mirror catches up.
