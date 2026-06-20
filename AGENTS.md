@@ -139,10 +139,6 @@ same change set when they apply:
 - update `examples/*.dj` when the feature benefits from a manual playground,
   demo fixture, completion target, or cross-reference target.
 
-## Build gotcha: do not bump tokio
-
-The crates index mirror in this environment lags and lacks `tokio-macros 2.7.0`, so resolving tokio ≥ 1.52 fails. `Cargo.toml` allows `tokio = "1.51.0"` (caret) but `Cargo.lock` holds it at exactly 1.51.0. **Do not run `cargo update` / `cargo update -p tokio` expecting a newer tokio** — it will try 1.52.x and fail. Keep the locked 1.51.0 until the mirror catches up.
-
 ## Runtime gotcha: every notification must be handled or the server crashes
 
 This is the most important architectural constraint. The server uses async-lsp's **omni-trait** style (`Router::from_language_server` + `impl LanguageServer for ServerState`). The omni-trait pre-registers a handler for *every* standard LSP notification whose default returns `ControlFlow::Break(Err(Routing(...)))` — which breaks the main loop and makes `run_buffered(...).await.unwrap()` in `main` panic, killing the process.
