@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::ops::{ControlFlow, Range as ByteRange};
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_lsp::client_monitor::ClientProcessMonitorLayer;
 use async_lsp::concurrency::ConcurrencyLayer;
@@ -11,7 +10,7 @@ use async_lsp::router::Router;
 use async_lsp::server::LifecycleLayer;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ClientSocket, ErrorCode, LanguageServer, ResponseError};
-use chrono::{DateTime, Datelike, Duration, FixedOffset, SecondsFormat, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, Local, SecondsFormat, TimeZone, Timelike};
 use djot_core::{
     build_index, heading_outline, metadata_block, resolve_target, tasks, AnalysisDiagnostic,
     DiagnosticKind, Heading, PathRenameError, RefTarget, RenameTargetError, Workspace,
@@ -1475,34 +1474,7 @@ fn code_action_kind_includes(requested: &CodeActionKind, action_kind: &CodeActio
 }
 
 fn created_timestamp() -> String {
-    rfc3339_utc(SystemTime::now())
-}
-
-fn rfc3339_utc(time: SystemTime) -> String {
-    let duration = time.duration_since(UNIX_EPOCH).unwrap_or_default();
-    let total_seconds = duration.as_secs();
-    let days = (total_seconds / 86_400) as i64;
-    let seconds_of_day = total_seconds % 86_400;
-    let (year, month, day) = civil_from_days(days);
-    let hour = seconds_of_day / 3_600;
-    let minute = (seconds_of_day % 3_600) / 60;
-    let second = seconds_of_day % 60;
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
-    let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = z - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    let year = year + if month <= 2 { 1 } else { 0 };
-    (year, month as u32, day as u32)
+    Local::now().to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
 fn str_event_touching_cursor(text: &str, offset: usize) -> Option<ByteRange<usize>> {

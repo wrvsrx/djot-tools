@@ -301,13 +301,16 @@ fn assert_timestamp_shape(replacement: &str, prefix: &str) {
         .map(|(timestamp, _)| timestamp)
         .expect("missing timestamp");
 
-    assert_eq!(timestamp.len(), "2026-06-20T12:34:56Z".len());
+    assert!(
+        timestamp.len() == "2026-06-20T12:34:56Z".len()
+            || timestamp.len() == "2026-06-20T12:34:56+08:00".len()
+    );
     assert_eq!(&timestamp[4..5], "-");
     assert_eq!(&timestamp[7..8], "-");
     assert_eq!(&timestamp[10..11], "T");
     assert_eq!(&timestamp[13..14], ":");
     assert_eq!(&timestamp[16..17], ":");
-    assert_eq!(&timestamp[19..20], "Z");
+    assert_timezone_shape(timestamp);
     assert!(timestamp[..4].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[5..7].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[8..10].chars().all(|c| c.is_ascii_digit()));
@@ -323,17 +326,33 @@ fn assert_timestamp_shape_with_closing_quote(replacement: &str, prefix: &str) {
         .map(|(timestamp, _)| timestamp)
         .expect("missing timestamp");
 
-    assert_eq!(timestamp.len(), "2026-06-20T12:34:56Z".len());
+    assert!(
+        timestamp.len() == "2026-06-20T12:34:56Z".len()
+            || timestamp.len() == "2026-06-20T12:34:56+08:00".len()
+    );
     assert_eq!(&timestamp[4..5], "-");
     assert_eq!(&timestamp[7..8], "-");
     assert_eq!(&timestamp[10..11], "T");
     assert_eq!(&timestamp[13..14], ":");
     assert_eq!(&timestamp[16..17], ":");
-    assert_eq!(&timestamp[19..20], "Z");
+    assert_timezone_shape(timestamp);
     assert!(timestamp[..4].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[5..7].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[8..10].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[11..13].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[14..16].chars().all(|c| c.is_ascii_digit()));
     assert!(timestamp[17..19].chars().all(|c| c.is_ascii_digit()));
+}
+
+fn assert_timezone_shape(timestamp: &str) {
+    match timestamp.len() {
+        20 => assert_eq!(&timestamp[19..20], "Z"),
+        25 => {
+            assert!(&timestamp[19..20] == "+" || &timestamp[19..20] == "-");
+            assert!(timestamp[20..22].chars().all(|c| c.is_ascii_digit()));
+            assert_eq!(&timestamp[22..23], ":");
+            assert!(timestamp[23..25].chars().all(|c| c.is_ascii_digit()));
+        }
+        _ => panic!("unexpected timestamp length: {timestamp}"),
+    }
 }
