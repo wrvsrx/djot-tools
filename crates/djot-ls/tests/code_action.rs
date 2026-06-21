@@ -259,7 +259,7 @@ fn code_action_does_not_mark_canceled_task_done() {
 
 #[test]
 fn code_action_marks_recurring_task_done_and_creates_next_instance() {
-    let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" recur=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
+    let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" wait=\"2026-06-20T09:00:00+08:00\" recur=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -316,7 +316,7 @@ fn code_action_marks_recurring_task_done_and_creates_next_instance() {
     assert!(next_insert.contains("{#Weekly-review-2026-06-28}\n"));
     assert!(next_insert.contains("{created=\"20"));
     assert!(next_insert.contains(
-        " due=\"2026-06-28T17:00:00+08:00\" recur=\"P1W\" prev=\"#Weekly-review-2026-06-21\"}"
+        " due=\"2026-06-28T17:00:00+08:00\" wait=\"2026-06-27T09:00:00+08:00\" recur=\"P1W\" prev=\"#Weekly-review-2026-06-21\"}"
     ));
     assert!(next_insert.contains("::: task\nWeekly review.\n:::\n"));
 }
@@ -370,7 +370,7 @@ fn code_action_uses_quoted_id_attribute_for_unicode_recurring_task_ids() {
 
 #[test]
 fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
-    let doc = "# Tasks\n\n- {created=\"2026-06-20T09:30:00Z\"}\n  {project=\"ops\" due=\"2026-06-21T17:00:00+08:00\" recur=\"P1D\"}\n  {#daily-review}\n  ::: task\n  Daily review.\n  :::\n";
+    let doc = "# Tasks\n\n- {created=\"2026-06-20T09:30:00Z\"}\n  {project=\"ops\" due=\"2026-06-21T17:00:00+08:00\" wait=\"2026-06-21T09:00:00+08:00\" recur=\"P1D\"}\n  {#daily-review}\n  ::: task\n  Daily review.\n  :::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -420,9 +420,11 @@ fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
     assert!(next_insert.contains("  {project=\"ops\"}\n"));
     assert!(!next_insert.contains("2026-06-20T09:30:00Z"));
     assert!(!next_insert.contains("{project=\"ops\" due=\"2026-06-21T17:00:00+08:00\""));
+    assert!(!next_insert.contains(" wait=\"2026-06-21T09:00:00+08:00\""));
     assert!(!next_insert.contains("  {#daily-review}\n"));
-    assert!(next_insert
-        .contains(" due=\"2026-06-22T17:00:00+08:00\" recur=\"P1D\" prev=\"#daily-review\"}"));
+    assert!(next_insert.contains(
+        " due=\"2026-06-22T17:00:00+08:00\" wait=\"2026-06-22T09:00:00+08:00\" recur=\"P1D\" prev=\"#daily-review\"}"
+    ));
     assert!(next_insert.contains("  ::: task\n  Daily review.\n  :::\n"));
 }
 

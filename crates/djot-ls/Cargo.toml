@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 djot-core = { path = "../djot-core" }
 async-lsp = { version = "0.2.4", features = ["tokio"] }
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono.workspace = true
 futures = { version = "0.3.28", default-features = false, features = ["async-await", "std"] }
 jotdown.workspace = true
 lsp-types = "0.95.0"

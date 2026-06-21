@@ -1207,6 +1207,11 @@ fn recurring_task_completion_edit(
     let due = DateTime::parse_from_rfc3339(task.due.as_deref()?).ok()?;
     let recur = task.recur.as_deref()?;
     let next_due = next_recur_due(due, recur)?;
+    let next_wait = task
+        .wait
+        .as_deref()
+        .and_then(|wait| DateTime::parse_from_rfc3339(wait).ok())
+        .and_then(|wait| next_recur_due(wait, recur));
     let line_start = task_opening_fence_line_start(text, &task.range)?;
     let line = text.get(line_start..line_bounds(text, line_start)?.1)?;
     let indent = leading_indent(line);
@@ -1225,6 +1230,11 @@ fn recurring_task_completion_edit(
     let next_insert = line_bounds(text, task.range.end)?.1;
     let recur = escape_attribute_value(recur);
     let next_due_text = next_due.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let next_wait_text = next_wait.map(|wait| wait.to_rfc3339_opts(SecondsFormat::Secs, true));
+    let next_wait_attribute = next_wait_text
+        .as_deref()
+        .map(|wait| format!(" wait=\"{}\"", escape_attribute_value(wait)))
+        .unwrap_or_default();
     let current_id_text = escape_attribute_value(&current_id);
     let current_id_attribute = anchor_attribute(&current_id);
     let next_id_attribute = anchor_attribute(&next_id);
@@ -1241,14 +1251,14 @@ fn recurring_task_completion_edit(
         Some(context) => TaskTextEdit {
             range: context.insert..context.insert,
             new_text: format!(
-                "\n{list_indent}- {next_id_attribute}\n{indent}{{created=\"{done}\" due=\"{next_due_text}\" recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}",
+                "\n{list_indent}- {next_id_attribute}\n{indent}{{created=\"{done}\" due=\"{next_due_text}\"{next_wait_attribute} recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}",
                 list_indent = context.list_indent,
             ),
         },
         None => TaskTextEdit {
             range: next_insert..next_insert,
             new_text: format!(
-                "\n\n{indent}{next_id_attribute}\n{indent}{{created=\"{done}\" due=\"{next_due_text}\" recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}"
+                "\n\n{indent}{next_id_attribute}\n{indent}{{created=\"{done}\" due=\"{next_due_text}\"{next_wait_attribute} recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}"
             ),
         },
     };
@@ -1543,7 +1553,7 @@ fn is_recurring_instance_attribute(token: &str) -> bool {
     let key = token.split_once('=').map_or(token, |(key, _)| key);
     matches!(
         key,
-        "created" | "done" | "canceled" | "due" | "recur" | "prev"
+        "created" | "done" | "canceled" | "due" | "wait" | "recur" | "prev"
     )
 }
 
@@ -2311,7 +2321,7 @@ mod tests {
 
     #[test]
     fn recurring_attribute_filter_drops_instance_attribute_lines() {
-        let source = "  {#task created=\"2026-06-21T00:00:00Z\" due=\"2026-06-22T00:00:00Z\" recur=\"P1D\" done=\"2026-06-21T12:00:00Z\" canceled=\"2026-06-21T13:00:00Z\" prev=\"#old\"}\n  ::: task\n  Title\n  :::\n";
+        let source = "  {#task created=\"2026-06-21T00:00:00Z\" due=\"2026-06-22T00:00:00Z\" wait=\"2026-06-21T20:00:00Z\" recur=\"P1D\" done=\"2026-06-21T12:00:00Z\" canceled=\"2026-06-21T13:00:00Z\" prev=\"#old\"}\n  ::: task\n  Title\n  :::\n";
 
         assert_eq!(
             filter_recurring_instance_attributes(source),
