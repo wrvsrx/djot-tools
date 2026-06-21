@@ -73,6 +73,15 @@ the opening task fence.
 Complete this task from a code action.
 :::
 
+Place the cursor inside this recurring task div and ask for code actions.
+`djot-ls` should offer "Mark task done", inserting `done`, adding an id if
+needed, and appending the next task instance with `prev`.
+
+{due="2026-06-21T17:00:00+08:00" repeat="P1W"}
+::: task
+Review the recurring task flow.
+:::
+
 # Diagnostics
 
 These links are intentionally broken so diagnostics have something to report:

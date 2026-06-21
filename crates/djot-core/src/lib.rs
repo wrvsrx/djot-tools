@@ -92,6 +92,9 @@ pub struct Task {
     pub id: Option<String>,
     pub created: Option<String>,
     pub done: Option<String>,
+    pub due: Option<String>,
+    pub repeat: Option<String>,
+    pub prev: Option<String>,
 }
 
 /// Protocol-agnostic diagnostics produced by djot analysis.
@@ -332,6 +335,9 @@ pub fn tasks(text: &str) -> Vec<Task> {
                     id: attrs.get_value("id").map(|value| value.to_string()),
                     created: metadata.created,
                     done: metadata.done,
+                    due: metadata.due,
+                    repeat: metadata.repeat,
+                    prev: metadata.prev,
                     capturing_title: false,
                     captured_title: false,
                     title_range: None,
@@ -843,6 +849,10 @@ fn datetime_attribute(attrs: &Attributes, key: &str) -> Option<String> {
         .filter(|value| is_rfc3339_datetime(value))
 }
 
+fn string_attribute(attrs: &Attributes, key: &str) -> Option<String> {
+    attrs.get_value(key).map(|value| value.to_string())
+}
+
 fn is_rfc3339_datetime(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 20 {
@@ -948,6 +958,9 @@ struct TaskFrame {
     id: Option<String>,
     created: Option<String>,
     done: Option<String>,
+    due: Option<String>,
+    repeat: Option<String>,
+    prev: Option<String>,
     capturing_title: bool,
     captured_title: bool,
     title_range: Option<Range<usize>>,
@@ -958,6 +971,9 @@ struct TaskFrame {
 struct TaskMetadata {
     created: Option<String>,
     done: Option<String>,
+    due: Option<String>,
+    repeat: Option<String>,
+    prev: Option<String>,
 }
 
 impl TaskMetadata {
@@ -965,6 +981,9 @@ impl TaskMetadata {
         Self {
             created: datetime_attribute(attrs, "created"),
             done: datetime_attribute(attrs, "done"),
+            due: datetime_attribute(attrs, "due"),
+            repeat: string_attribute(attrs, "repeat"),
+            prev: string_attribute(attrs, "prev"),
         }
     }
 
@@ -983,6 +1002,24 @@ impl TaskMetadata {
                     .done
                     .or_else(|| fallback.and_then(|metadata| metadata.done.clone())),
             },
+            due: match attrs.get_value("due") {
+                Some(_) => own.due,
+                None => own
+                    .due
+                    .or_else(|| fallback.and_then(|metadata| metadata.due.clone())),
+            },
+            repeat: match attrs.get_value("repeat") {
+                Some(_) => own.repeat,
+                None => own
+                    .repeat
+                    .or_else(|| fallback.and_then(|metadata| metadata.repeat.clone())),
+            },
+            prev: match attrs.get_value("prev") {
+                Some(_) => own.prev,
+                None => own
+                    .prev
+                    .or_else(|| fallback.and_then(|metadata| metadata.prev.clone())),
+            },
         }
     }
 }
@@ -996,6 +1033,9 @@ impl TaskFrame {
             id: self.id,
             created: self.created,
             done: self.done,
+            due: self.due,
+            repeat: self.repeat,
+            prev: self.prev,
         }
     }
 }
@@ -1130,7 +1170,7 @@ mod tests {
 
     #[test]
     fn tasks_extract_task_divs() {
-        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
+        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\" repeat=\"P1W\" prev=\"#previous-task\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
@@ -1140,6 +1180,9 @@ mod tests {
             Some("2026-06-18T09:00:00+08:00")
         );
         assert_eq!(found[0].done.as_deref(), Some("2026-06-19T21:30:00+08:00"));
+        assert_eq!(found[0].due.as_deref(), Some("2026-06-20T09:00:00+08:00"));
+        assert_eq!(found[0].repeat.as_deref(), Some("P1W"));
+        assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
         assert_eq!(found[0].title, "Write parser.");
         assert_eq!(
             found[0]
@@ -1152,11 +1195,14 @@ mod tests {
 
     #[test]
     fn tasks_inherit_metadata_from_containing_list_item() {
-        let text = "- {created=\"2026-06-18T09:00:00Z\"}\n  ::: task\n  Write parser.\n  :::\n";
+        let text = "- {created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" repeat=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].created.as_deref(), Some("2026-06-18T09:00:00Z"));
+        assert_eq!(found[0].due.as_deref(), Some("2026-06-19T09:00:00Z"));
+        assert_eq!(found[0].repeat.as_deref(), Some("P1D"));
+        assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
         assert_eq!(found[0].done, None);
         assert_eq!(found[0].title, "Write parser.");
     }

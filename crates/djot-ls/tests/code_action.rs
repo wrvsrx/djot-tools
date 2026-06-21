@@ -227,6 +227,70 @@ fn code_action_marks_list_shaped_task_done() {
     assert_timestamp_shape(inserted, "  {done=\"");
 }
 
+#[test]
+fn code_action_marks_recurring_task_done_and_creates_next_instance() {
+    let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" repeat=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction",
+        "params":{
+            "textDocument":{"uri":"file:///tasks.dj"},
+            "range":{"start":{"line":4,"character":2},"end":{"line":4,"character":2}},
+            "context":{"diagnostics":[],"only":["quickfix"]}
+        }}),
+        json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let actions = responses
+        .iter()
+        .find(|m| m["id"] == json!(2))
+        .expect("no codeAction response")["result"]
+        .as_array()
+        .expect("result is not an array");
+    assert_eq!(actions.len(), 1);
+
+    let action = &actions[0];
+    assert_eq!(action["title"], json!("Mark task done"));
+    assert_eq!(action["kind"], json!("quickfix"));
+
+    let edits = action["edit"]["changes"]["file:///tasks.dj"]
+        .as_array()
+        .expect("changes is not an array");
+    assert_eq!(edits.len(), 2);
+    assert_eq!(
+        edits[0]["range"],
+        json!({"start":{"line":3,"character":0},"end":{"line":3,"character":0}})
+    );
+    let done_insert = edits[0]["newText"]
+        .as_str()
+        .expect("newText is not a string");
+    assert!(done_insert.starts_with("{#Weekly-review-2026-06-21}\n{done=\""));
+    assert_timestamp_shape(
+        done_insert
+            .strip_prefix("{#Weekly-review-2026-06-21}\n")
+            .unwrap(),
+        "{done=\"",
+    );
+
+    assert_eq!(
+        edits[1]["range"],
+        json!({"start":{"line":6,"character":0},"end":{"line":6,"character":0}})
+    );
+    let next_insert = edits[1]["newText"]
+        .as_str()
+        .expect("newText is not a string");
+    assert!(next_insert.contains("{#Weekly-review-2026-06-28}\n"));
+    assert!(next_insert.contains("{created=\"20"));
+    assert!(next_insert.contains(
+        " due=\"2026-06-28T17:00:00+08:00\" repeat=\"P1W\" prev=\"#Weekly-review-2026-06-21\"}"
+    ));
+    assert!(next_insert.contains("::: task\nWeekly review.\n:::\n"));
+}
+
 fn assert_timestamp_shape(replacement: &str, prefix: &str) {
     let timestamp = replacement
         .strip_prefix(prefix)

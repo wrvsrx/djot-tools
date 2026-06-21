@@ -105,6 +105,8 @@ support.
     and title
   - [ ] document symbols for tasks
   - [x] code action to add `done`
+  - [x] `done` code action completes recurring task instances by appending the
+    next instance
   - [ ] code action to remove `done`
   - [x] code action to convert a native Djot task list item into a task div
   - [ ] filter tasks by completion state, created datetime, and done datetime in

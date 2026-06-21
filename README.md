@@ -82,6 +82,10 @@ files with `EDITOR`. In interactive mode, `ctrl-n` creates a new file from the
 current query, relative to `--root`, adds a `.dj` extension when the query has
 no `.dj` / `.djot` extension, and opens it with `EDITOR`.
 
+The `tasks` subcommand prints task blocks and applies the same `--query`
+mechanism to task records. Task queries expose `title`, `created`, `due`,
+`done`, `repeat`, and `prev`.
+
 ## Build
 
 ``` sh

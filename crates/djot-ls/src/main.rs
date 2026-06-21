@@ -11,11 +11,13 @@ use async_lsp::router::Router;
 use async_lsp::server::LifecycleLayer;
 use async_lsp::tracing::TracingLayer;
 use async_lsp::{ClientSocket, ErrorCode, LanguageServer, ResponseError};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, SecondsFormat, TimeZone, Timelike};
 use djot_core::{
-    heading_outline, metadata_block, resolve_target, tasks, AnalysisDiagnostic, DiagnosticKind,
-    Heading, PathRenameError, RefTarget, RenameTargetError, Workspace,
+    build_index, heading_outline, metadata_block, resolve_target, tasks, AnalysisDiagnostic,
+    DiagnosticKind, Heading, PathRenameError, RefTarget, RenameTargetError, Workspace,
 };
 use futures::future::BoxFuture;
+use iso8601_duration::Duration as IsoDuration;
 use jotdown::{Container, Event, Parser};
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
@@ -834,14 +836,20 @@ impl ServerState {
             params.context.only.as_deref(),
             &CodeActionKind::QUICKFIX,
         ) {
+            let timestamp = created_timestamp();
             if let Some(completion) =
-                task_completion_edit(&entry.text, offset, &created_timestamp())
+                recurring_task_completion_edit(&entry.text, offset, &timestamp)
+                    .or_else(|| task_completion_edit(&entry.text, offset, &timestamp))
             {
-                let range = byte_range_to_lsp(&entry.text, &completion.insert);
-                let edit = WorkspaceEdit::new(HashMap::from([(
-                    params.text_document.uri.clone(),
-                    vec![TextEdit::new(range, completion.new_text)],
-                )]));
+                let edits = completion
+                    .edits
+                    .into_iter()
+                    .map(|edit| {
+                        TextEdit::new(byte_range_to_lsp(&entry.text, &edit.range), edit.new_text)
+                    })
+                    .collect();
+                let edit =
+                    WorkspaceEdit::new(HashMap::from([(params.text_document.uri.clone(), edits)]));
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                     title: "Mark task done".to_string(),
                     kind: Some(CodeActionKind::QUICKFIX),
@@ -942,7 +950,11 @@ struct TaskListItemConversion {
 }
 
 struct TaskCompletionEdit {
-    insert: ByteRange<usize>,
+    edits: Vec<TaskTextEdit>,
+}
+
+struct TaskTextEdit {
+    range: ByteRange<usize>,
     new_text: String,
 }
 
@@ -1172,9 +1184,208 @@ fn task_completion_edit(text: &str, offset: usize, done: &str) -> Option<TaskCom
     let indent = &line[..indent_len];
 
     Some(TaskCompletionEdit {
-        insert: line_start..line_start,
-        new_text: format!("{indent}{{done=\"{done}\"}}\n"),
+        edits: vec![TaskTextEdit {
+            range: line_start..line_start,
+            new_text: format!("{indent}{{done=\"{done}\"}}\n"),
+        }],
     })
+}
+
+fn recurring_task_completion_edit(
+    text: &str,
+    offset: usize,
+    done: &str,
+) -> Option<TaskCompletionEdit> {
+    let task = tasks(text).into_iter().find(|task| {
+        task.done.is_none() && task.range.start <= offset && offset <= task.range.end
+    })?;
+    let due = DateTime::parse_from_rfc3339(task.due.as_deref()?).ok()?;
+    let repeat = task.repeat.as_deref()?;
+    let next_due = next_repeat_due(due, repeat)?;
+    let line_start = task_opening_fence_line_start(text, &task.range)?;
+    let line = text.get(line_start..line_bounds(text, line_start)?.1)?;
+    let indent = leading_indent(line);
+    if !indent.is_empty() {
+        return None;
+    }
+
+    let anchors = build_index(text).anchors;
+    let mut reserved = HashSet::new();
+    let current_id = match task.id.clone() {
+        Some(id) => id,
+        None => {
+            let id = task_instance_id(&task.title, due, &anchors, &reserved)?;
+            reserved.insert(id.clone());
+            id
+        }
+    };
+    let next_id = task_instance_id(&task.title, next_due, &anchors, &reserved)?;
+    let next_insert = line_bounds(text, task.range.end)?.1;
+    let repeat = escape_attribute_value(repeat);
+    let next_due_text = next_due.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let current_id_text = escape_attribute_value(&current_id);
+    let div = text.get(task.range.clone())?;
+
+    let mut done_text = String::new();
+    if task.id.is_none() {
+        done_text.push_str(&format!("{{#{current_id_text}}}\n"));
+    }
+    done_text.push_str(&format!("{{done=\"{done}\"}}\n"));
+
+    Some(TaskCompletionEdit {
+        edits: vec![
+            TaskTextEdit {
+                range: line_start..line_start,
+                new_text: done_text,
+            },
+            TaskTextEdit {
+                range: next_insert..next_insert,
+                new_text: format!(
+                    "\n\n{{#{next_id}}}\n{{created=\"{done}\" due=\"{next_due_text}\" repeat=\"{repeat}\" prev=\"#{current_id_text}\"}}\n{div}"
+                ),
+            },
+        ],
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RepeatRule {
+    Days(i64),
+    Weeks(i64),
+    Months(i32),
+    Years(i32),
+}
+
+fn next_repeat_due(due: DateTime<FixedOffset>, repeat: &str) -> Option<DateTime<FixedOffset>> {
+    let rule = parse_repeat_rule(repeat.parse().ok()?)?;
+    match rule {
+        RepeatRule::Days(days) => Some(due + Duration::days(days)),
+        RepeatRule::Weeks(weeks) => Some(due + Duration::weeks(weeks)),
+        RepeatRule::Months(months) => add_months(due, months),
+        RepeatRule::Years(years) => add_months(due, years.checked_mul(12)?),
+    }
+}
+
+fn parse_repeat_rule(duration: IsoDuration) -> Option<RepeatRule> {
+    let units = [
+        duration.year,
+        duration.month,
+        duration.day,
+        duration.hour,
+        duration.minute,
+        duration.second,
+    ];
+    if units.iter().filter(|value| **value > 0.0).count() != 1 {
+        return None;
+    }
+    if duration.hour > 0.0 || duration.minute > 0.0 || duration.second > 0.0 {
+        return None;
+    }
+    if duration.year > 0.0 {
+        return integer_f32(duration.year).and_then(|years| {
+            i32::try_from(years)
+                .ok()
+                .filter(|years| *years > 0)
+                .map(RepeatRule::Years)
+        });
+    }
+    if duration.month > 0.0 {
+        return integer_f32(duration.month).and_then(|months| {
+            i32::try_from(months)
+                .ok()
+                .filter(|months| *months > 0)
+                .map(RepeatRule::Months)
+        });
+    }
+    integer_f32(duration.day).and_then(|days| {
+        if days > 0 && days % 7 == 0 {
+            Some(RepeatRule::Weeks(days / 7))
+        } else if days > 0 {
+            Some(RepeatRule::Days(days))
+        } else {
+            None
+        }
+    })
+}
+
+fn integer_f32(value: f32) -> Option<i64> {
+    if value.fract() == 0.0 && value <= i64::MAX as f32 {
+        Some(value as i64)
+    } else {
+        None
+    }
+}
+
+fn add_months(due: DateTime<FixedOffset>, months: i32) -> Option<DateTime<FixedOffset>> {
+    let month0 = due.month0() as i32 + months;
+    let year = due.year() + month0.div_euclid(12);
+    let month0 = month0.rem_euclid(12);
+    let month = (month0 + 1) as u32;
+    let day = due.day().min(last_day_of_month(year, month)?);
+    due.timezone()
+        .with_ymd_and_hms(year, month, day, due.hour(), due.minute(), due.second())
+        .single()
+}
+
+fn last_day_of_month(year: i32, month: u32) -> Option<u32> {
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    let first_next = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)?;
+    Some((first_next - Duration::days(1)).day())
+}
+
+fn task_instance_id(
+    title: &str,
+    due: DateTime<FixedOffset>,
+    anchors: &HashMap<String, djot_core::Anchor>,
+    reserved: &HashSet<String>,
+) -> Option<String> {
+    let base = djot_heading_id(title)?;
+    let date = due.format("%Y-%m-%d");
+    let candidate = format!("{base}-{date}");
+    Some(unique_anchor_id(candidate, anchors, reserved))
+}
+
+fn djot_heading_id(title: &str) -> Option<String> {
+    let source = format!("# {}\n", title.trim());
+    Parser::new(&source).find_map(|event| match event {
+        Event::Start(Container::Heading { id, .. }, _) => Some(id.into_owned()),
+        _ => None,
+    })
+}
+
+fn unique_anchor_id(
+    candidate: String,
+    anchors: &HashMap<String, djot_core::Anchor>,
+    reserved: &HashSet<String>,
+) -> String {
+    if !anchors.contains_key(&candidate) && !reserved.contains(&candidate) {
+        return candidate;
+    }
+    let mut count = 2;
+    loop {
+        let id = format!("{candidate}-{count}");
+        if !anchors.contains_key(&id) && !reserved.contains(&id) {
+            return id;
+        }
+        count += 1;
+    }
+}
+
+fn leading_indent(line: &str) -> &str {
+    let indent_len = line
+        .char_indices()
+        .find(|(_, c)| *c != ' ' && *c != '\t')
+        .map(|(i, _)| i)
+        .unwrap_or(line.len());
+    &line[..indent_len]
+}
+
+fn escape_attribute_value(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn metadata_insertion(text: &str, offset: usize, path: &Path) -> Option<MetadataInsertion> {
@@ -1781,4 +1992,42 @@ fn is_djot_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext == "dj" || ext == "djot")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeat_due_supports_iso_week_duration() {
+        let due = DateTime::parse_from_rfc3339("2026-06-21T17:00:00+08:00").unwrap();
+        let next = next_repeat_due(due, "P1W").unwrap();
+
+        assert_eq!(next.to_rfc3339(), "2026-06-28T17:00:00+08:00");
+    }
+
+    #[test]
+    fn repeat_due_adds_calendar_months() {
+        let due = DateTime::parse_from_rfc3339("2026-01-31T17:00:00+08:00").unwrap();
+        let next = next_repeat_due(due, "P1M").unwrap();
+
+        assert_eq!(next.to_rfc3339(), "2026-02-28T17:00:00+08:00");
+    }
+
+    #[test]
+    fn repeat_due_adds_calendar_years() {
+        let due = DateTime::parse_from_rfc3339("2024-02-29T17:00:00+08:00").unwrap();
+        let next = next_repeat_due(due, "P1Y").unwrap();
+
+        assert_eq!(next.to_rfc3339(), "2025-02-28T17:00:00+08:00");
+    }
+
+    #[test]
+    fn repeat_due_rejects_composite_and_time_durations() {
+        let due = DateTime::parse_from_rfc3339("2026-06-21T17:00:00+08:00").unwrap();
+
+        assert!(next_repeat_due(due, "P1M1D").is_none());
+        assert!(next_repeat_due(due, "PT1H").is_none());
+        assert!(next_repeat_due(due, "weekly").is_none());
+    }
 }

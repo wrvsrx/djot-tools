@@ -149,10 +149,10 @@ preserving a list-shaped document:
 
 Metadata on the `task` div takes precedence over inherited list item metadata.
 
-The `created` and `done` values must be quoted RFC 3339 datetimes. Date-only
-values such as `done=2026-06-19`, quoted date-only values such as
-`done="2026-06-19"`, and non-RFC-3339 datetime strings are invalid task
-metadata.
+The `created`, `due`, and `done` values must be quoted RFC 3339 datetimes.
+Date-only values such as `done=2026-06-19`, quoted date-only values such as
+`done="2026-06-19"`, and non-RFC-3339 datetime strings are not recognized as
+task metadata.
 
 The task id is optional. When present, it is just the normal Djot explicit id
 for the div, so the task also defines an anchor and can be targeted by regular
@@ -161,25 +161,37 @@ Djot links.
 Current task fields are intentionally minimal:
 
 - `created`: an RFC 3339 datetime string recording when the task was created.
+- `due`: an RFC 3339 datetime string recording when the current task instance
+  is due.
 - `done`: an RFC 3339 datetime string recording when the task was completed.
+- `repeat`: an ISO 8601 duration string describing how tooling should create
+  the next task instance after completing this one. Current tooling accepts one
+  positive integer date unit: `PnD`, `PnW`, `PnM`, or `PnY`.
+- `prev`: a Djot target such as `#weekly-review-2026-06-21` pointing to the
+  previous task instance in a repeated chain.
+
+A task with `due` and `repeat` is a recurring task instance. When completed
+through tooling, the completed instance keeps its `done` timestamp and a new
+task instance is appended with the next `due`, the same `repeat`, and `prev`
+pointing back to the completed task. Automatically generated recurring task ids
+use the Djot heading identifier derived from the task title plus the due date,
+such as `weekly-review-2026-06-21`.
 
 No other task metadata fields are currently defined. In particular, `status`,
-`due`, `scheduled`, `priority`, and `tags` are outside the current semantics.
-Native Djot task list items such as `- [ ] Write parser` and `- [x] Write
-tests` are also outside the current task model.
+`scheduled`, `priority`, and `tags` are outside the current semantics. Native
+Djot task list items such as `- [ ] Write parser` and `- [x] Write tests` are
+also outside the current task model.
 
 The task title is the plain text content of the first paragraph inside the task
 div. Later blocks are task details.
 
 # Diagnostics
 
-The current semantic diagnostics are unresolved Djot references and invalid
-task metadata:
+The current semantic diagnostics are unresolved Djot references:
 
 - missing same-document anchors (`#id`)
 - missing `.dj` or `.djot` target files
 - missing anchors in `.dj` or `.djot` target files
-- task `created` or `done` attributes that are not quoted RFC 3339 datetimes
 
 External URLs, non-Djot file links, and directory links are outside these
 reference diagnostics.

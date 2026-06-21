@@ -137,6 +137,9 @@ struct TaskRecord<'a> {
     title: &'a str,
     created: Option<&'a str>,
     done: Option<&'a str>,
+    due: Option<&'a str>,
+    repeat: Option<&'a str>,
+    prev: Option<&'a str>,
 }
 
 impl QueryPlan {
@@ -188,6 +191,9 @@ impl QueryPlan {
         context.add_variable_from_value("title", record.title.to_string());
         context.add_variable_from_value("created", record.created.map(str::to_string));
         context.add_variable_from_value("done", record.done.map(str::to_string));
+        context.add_variable_from_value("due", record.due.map(str::to_string));
+        context.add_variable_from_value("repeat", record.repeat.map(str::to_string));
+        context.add_variable_from_value("prev", record.prev.map(str::to_string));
 
         match self.program.execute(&context) {
             Ok(Value::Bool(value)) => Ok(value),
@@ -643,6 +649,9 @@ fn task_matches(
         title: &task.title,
         created: task.created.as_deref(),
         done: task.done.as_deref(),
+        due: task.due.as_deref(),
+        repeat: task.repeat.as_deref(),
+        prev: task.prev.as_deref(),
     })
 }
 
@@ -819,7 +828,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("tasks.dj"),
-            "{created=\"2026-06-18T09:00:00+08:00\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n",
+            "{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" repeat=\"P1W\" prev=\"#previous-task\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n",
         )
         .unwrap();
 
@@ -830,12 +839,18 @@ mod tests {
         let open = QueryPlan::compile("done == null").unwrap();
         let created = QueryPlan::compile("created == '2026-06-18T09:00:00+08:00'").unwrap();
         let done = QueryPlan::compile("done != null && title.matches('Done')").unwrap();
+        let recurring = QueryPlan::compile(
+            "due == '2026-06-20T09:00:00+08:00' && repeat == 'P1W' && prev == '#previous-task'",
+        )
+        .unwrap();
 
         assert!(task_matches(&root, &path, &found[0], Some(&open)).unwrap());
         assert!(!task_matches(&root, &path, &found[1], Some(&open)).unwrap());
         assert!(task_matches(&root, &path, &found[0], Some(&created)).unwrap());
         assert!(!task_matches(&root, &path, &found[1], Some(&created)).unwrap());
         assert!(task_matches(&root, &path, &found[1], Some(&done)).unwrap());
+        assert!(task_matches(&root, &path, &found[0], Some(&recurring)).unwrap());
+        assert!(!task_matches(&root, &path, &found[1], Some(&recurring)).unwrap());
         assert_eq!(task_line(&found[0]), "- Open task");
         assert_eq!(task_line(&found[1]), "o Done task");
 
