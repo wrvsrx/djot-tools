@@ -89,3 +89,12 @@ These links are intentionally broken so diagnostics have something to report:
 - Missing same-file anchor: [missing](#Missing-Anchor)
 - Missing file: [missing file](missing-target.dj)
 - Missing cross-file anchor: [missing heading](djot-export.dj#Missing-Heading)
+
+These duplicate anchors are intentionally broken so duplicate-anchor diagnostics
+have something to report:
+
+{#duplicate-anchor}
+First duplicate target.
+
+{#duplicate-anchor}
+Second duplicate target.
