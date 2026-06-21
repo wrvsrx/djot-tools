@@ -63,6 +63,9 @@ commits instead of one broad commit. Prefer this order when it applies:
 - docs or roadmap status updates last, in their own commit when they are just
   reflecting completed work.
 
+For longer tasks, commit after each coherent group of completed steps so the
+history stays reviewable and later work can build on stable checkpoints.
+
 Before each commit, check `git status --short` and `git diff` so unrelated user
 changes are not included. Run the narrowest relevant tests before intermediate
 commits, and run the full relevant suite before the final implementation
