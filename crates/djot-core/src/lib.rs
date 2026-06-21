@@ -100,6 +100,7 @@ pub struct Task {
     pub id: Option<String>,
     pub created: Option<String>,
     pub done: Option<String>,
+    pub canceled: Option<String>,
     pub due: Option<String>,
     pub recur: Option<String>,
     pub prev: Option<String>,
@@ -128,6 +129,7 @@ pub enum DiagnosticKind {
     InvalidTaskRecur {
         recur: String,
     },
+    ConflictingTaskClosedState,
     InvalidTaskPrevTarget {
         id: String,
     },
@@ -374,6 +376,7 @@ pub fn tasks(text: &str) -> Vec<Task> {
                     id: metadata.id,
                     created: metadata.created,
                     done: metadata.done,
+                    canceled: metadata.canceled,
                     due: metadata.due,
                     recur: metadata.recur,
                     prev: metadata.prev,
@@ -788,6 +791,13 @@ impl Workspace {
         }
 
         for task in tasks(&entry.text) {
+            if task.done.is_some() && task.canceled.is_some() {
+                diagnostics.push(AnalysisDiagnostic {
+                    range: task.range.clone(),
+                    kind: DiagnosticKind::ConflictingTaskClosedState,
+                });
+            }
+
             let Some(recur) = task.recur.as_deref() else {
                 continue;
             };
@@ -1384,6 +1394,7 @@ struct TaskFrame {
     id: Option<String>,
     created: Option<String>,
     done: Option<String>,
+    canceled: Option<String>,
     due: Option<String>,
     recur: Option<String>,
     prev: Option<String>,
@@ -1398,6 +1409,7 @@ struct TaskMetadata {
     id: Option<String>,
     created: Option<String>,
     done: Option<String>,
+    canceled: Option<String>,
     due: Option<String>,
     recur: Option<String>,
     prev: Option<String>,
@@ -1409,6 +1421,7 @@ impl TaskMetadata {
             id: string_attribute(attrs, "id"),
             created: datetime_attribute(attrs, "created"),
             done: datetime_attribute(attrs, "done"),
+            canceled: datetime_attribute(attrs, "canceled"),
             due: datetime_attribute(attrs, "due"),
             recur: string_attribute(attrs, "recur"),
             prev: string_attribute(attrs, "prev"),
@@ -1435,6 +1448,12 @@ impl TaskMetadata {
                 None => own
                     .done
                     .or_else(|| fallback.and_then(|metadata| metadata.done.clone())),
+            },
+            canceled: match attrs.get_value("canceled") {
+                Some(_) => own.canceled,
+                None => own
+                    .canceled
+                    .or_else(|| fallback.and_then(|metadata| metadata.canceled.clone())),
             },
             due: match attrs.get_value("due") {
                 Some(_) => own.due,
@@ -1467,6 +1486,7 @@ impl TaskFrame {
             id: self.id,
             created: self.created,
             done: self.done,
+            canceled: self.canceled,
             due: self.due,
             recur: self.recur,
             prev: self.prev,
@@ -1667,7 +1687,7 @@ mod tests {
 
     #[test]
     fn tasks_extract_task_divs() {
-        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
+        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\" canceled=\"2026-06-19T22:00:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
@@ -1677,6 +1697,10 @@ mod tests {
             Some("2026-06-18T09:00:00+08:00")
         );
         assert_eq!(found[0].done.as_deref(), Some("2026-06-19T21:30:00+08:00"));
+        assert_eq!(
+            found[0].canceled.as_deref(),
+            Some("2026-06-19T22:00:00+08:00")
+        );
         assert_eq!(found[0].due.as_deref(), Some("2026-06-20T09:00:00+08:00"));
         assert_eq!(found[0].recur.as_deref(), Some("P1W"));
         assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
@@ -1692,7 +1716,7 @@ mod tests {
 
     #[test]
     fn tasks_inherit_metadata_from_containing_list_item() {
-        let text = "- {#write-parser created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" recur=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
+        let text = "- {#write-parser created=\"2026-06-18T09:00:00Z\" canceled=\"2026-06-18T18:00:00Z\" due=\"2026-06-19T09:00:00Z\" recur=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
@@ -1702,19 +1726,22 @@ mod tests {
         assert_eq!(found[0].recur.as_deref(), Some("P1D"));
         assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
         assert_eq!(found[0].done, None);
+        assert_eq!(found[0].canceled.as_deref(), Some("2026-06-18T18:00:00Z"));
         assert_eq!(found[0].title, "Write parser.");
     }
 
     #[test]
     fn tasks_reject_date_only_datetime_attributes() {
-        let text = "{created=\"2026-06-18\" done=2026-06-19}\n::: task\nDate-only metadata.\n:::\n\n{created=\"2026-06-18T09:00:00Z\" done=\"2026-06-19T13:30:00Z\"}\n::: task\nDatetime metadata.\n:::\n";
+        let text = "{created=\"2026-06-18\" done=2026-06-19 canceled=2026-06-20}\n::: task\nDate-only metadata.\n:::\n\n{created=\"2026-06-18T09:00:00Z\" done=\"2026-06-19T13:30:00Z\" canceled=\"2026-06-20T13:30:00Z\"}\n::: task\nDatetime metadata.\n:::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].created, None);
         assert_eq!(found[0].done, None);
+        assert_eq!(found[0].canceled, None);
         assert_eq!(found[1].created.as_deref(), Some("2026-06-18T09:00:00Z"));
         assert_eq!(found[1].done.as_deref(), Some("2026-06-19T13:30:00Z"));
+        assert_eq!(found[1].canceled.as_deref(), Some("2026-06-20T13:30:00Z"));
     }
 
     #[test]
@@ -1982,6 +2009,22 @@ mod tests {
                     recur: "P1M1D".into(),
                 }
         }));
+    }
+
+    #[test]
+    fn workspace_reports_conflicting_task_closed_state() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "{done=\"2026-06-21T09:00:00Z\" canceled=\"2026-06-21T10:00:00Z\"}\n::: task\nConflicting task.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        let diagnostics = ws.diagnostics_for(&path);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].kind,
+            DiagnosticKind::ConflictingTaskClosedState
+        );
+        assert_eq!(&doc[diagnostics[0].range.clone()], doc);
     }
 
     #[test]
