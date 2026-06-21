@@ -54,8 +54,15 @@ This is a **Cargo workspace** (`crates/*`) so the djot semantics can be shared b
 
 ## Commit workflow
 
-When asked to commit a non-trivial change, split the work into small, logical
-commits instead of one broad commit. Prefer this order when it applies:
+When implementing a feature or a fix, start from the current main branch state
+and create a short-lived topic branch before changing code. Use a descriptive
+branch name such as `feat/task-wait` or `fix/diagnostics-refresh`. Do not work
+directly on `main` for feature or fix implementation unless the user explicitly
+asks for that.
+
+Commit each coherent piece of code as it is completed instead of waiting until
+the end of the whole task. For a non-trivial change, split the work into small,
+logical commits instead of one broad commit. Prefer this order when it applies:
 
 - protocol-agnostic core data/model changes first;
 - core behavior/API changes with focused unit tests next;
@@ -64,7 +71,9 @@ commits instead of one broad commit. Prefer this order when it applies:
   reflecting completed work.
 
 For longer tasks, commit after each coherent group of completed steps so the
-history stays reviewable and later work can build on stable checkpoints.
+history stays reviewable and later work can build on stable checkpoints. When
+the implementation is complete and tests pass, summarize the branch and ask the
+user to confirm before merging it back into `main`.
 
 Before each commit, check `git status --short` and `git diff` so unrelated user
 changes are not included. Run the narrowest relevant tests before intermediate
@@ -74,6 +83,10 @@ commit. Use concise conventional-style messages in the form
 `fix(ls): ...`, `test(filter): ...`, or `chore(dev): ...`. Use `docs: ...`
 for documentation-only changes unless the surrounding history clearly uses a
 more specific docs scope.
+
+After the user confirms the completed branch, merge it into `main` using a
+normal non-destructive merge workflow. Check `git status --short` before and
+after the merge, and do not include unrelated user changes in the merge commit.
 
 ## Release workflow
 
