@@ -109,6 +109,7 @@ pub struct AnalysisDiagnostic {
 pub enum DiagnosticKind {
     UnresolvedAnchor { id: String },
     UnresolvedPath { path: String },
+    DuplicateAnchor { id: String },
     MissingTaskDueForRecur,
     InvalidTaskRecur { recur: String },
 }
@@ -709,6 +710,8 @@ impl Workspace {
         };
 
         let mut diagnostics = Vec::new();
+        diagnostics.extend(duplicate_anchor_diagnostics(&entry.text));
+
         for reference in &entry.index.references {
             if !is_diagnostic_target(&reference.target) {
                 continue;
@@ -761,6 +764,72 @@ impl Workspace {
         }
 
         diagnostics
+    }
+}
+
+fn duplicate_anchor_diagnostics(text: &str) -> Vec<AnalysisDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen: HashMap<String, Range<usize>> = HashMap::new();
+    let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
+
+    for (event, span) in Parser::new(text).into_offset_iter() {
+        match event {
+            Event::Start(Container::Heading { id, .. }, _) => {
+                open_headings.push(HeadingAnchorFrame {
+                    id: id.into_owned(),
+                    start: span.start,
+                    text_range: None,
+                });
+            }
+            Event::Start(_, attrs) => {
+                if let Some(id) = attrs.get_value("id") {
+                    let id = id.to_string();
+                    let range = explicit_id_range(text, &span, &id).unwrap_or(span);
+                    record_anchor_occurrence(&mut seen, &mut diagnostics, id, range);
+                }
+            }
+            Event::Str(_) => {
+                if let Some(heading) = open_headings.last_mut() {
+                    match &mut heading.text_range {
+                        Some(range) => range.end = span.end,
+                        None => heading.text_range = Some(span.clone()),
+                    }
+                }
+            }
+            Event::End(Container::Heading { .. }) => {
+                if let Some(heading) = open_headings.pop() {
+                    let range = heading.start..span.end;
+                    let occurrence_range = explicit_id_range(text, &range, &heading.id)
+                        .or(heading.text_range)
+                        .unwrap_or_else(|| range.clone());
+                    record_anchor_occurrence(
+                        &mut seen,
+                        &mut diagnostics,
+                        heading.id,
+                        occurrence_range,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    diagnostics
+}
+
+fn record_anchor_occurrence(
+    seen: &mut HashMap<String, Range<usize>>,
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+    id: String,
+    range: Range<usize>,
+) {
+    if seen.contains_key(&id) {
+        diagnostics.push(AnalysisDiagnostic {
+            range,
+            kind: DiagnosticKind::DuplicateAnchor { id },
+        });
+    } else {
+        seen.insert(id, range);
     }
 }
 
@@ -1534,6 +1603,22 @@ mod tests {
                     recur: "P1M1D".into(),
                 }
         }));
+    }
+
+    #[test]
+    fn workspace_reports_duplicate_anchors() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "{#task}\n::: task\nFirst task.\n:::\n\n{#task}\n::: task\nSecond task.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        let diagnostics = ws.diagnostics_for(&path);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].kind,
+            DiagnosticKind::DuplicateAnchor { id: "task".into() }
+        );
+        assert_eq!(&doc[diagnostics[0].range.clone()], "task");
     }
 
     #[test]

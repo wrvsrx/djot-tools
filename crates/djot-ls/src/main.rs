@@ -1565,6 +1565,10 @@ fn to_lsp_diagnostic(text: &str, diagnostic: AnalysisDiagnostic) -> Diagnostic {
             "unresolved-path",
             format!("Unresolved Djot path `{}`", path),
         ),
+        DiagnosticKind::DuplicateAnchor { id } => (
+            "duplicate-anchor",
+            format!("Duplicate anchor `{}`", id),
+        ),
         DiagnosticKind::MissingTaskDueForRecur => (
             "missing-task-due-for-recur",
             "Recurring tasks with `recur` need a valid RFC 3339 `due` datetime.".to_string(),

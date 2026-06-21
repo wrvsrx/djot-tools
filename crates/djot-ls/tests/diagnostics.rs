@@ -73,6 +73,29 @@ fn diagnostics_report_invalid_recurring_task_metadata() {
 }
 
 #[test]
+fn diagnostics_report_duplicate_anchors() {
+    let doc = "{#task}\n::: task\nFirst task.\n:::\n\n{#task}\n::: task\nSecond task.\n:::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let diagnostics = last_diagnostics(&responses);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0]["code"], json!("duplicate-anchor"));
+    assert_eq!(diagnostics[0]["message"], json!("Duplicate anchor `task`"));
+    assert_eq!(
+        diagnostics[0]["range"],
+        json!({"start":{"line":5,"character":2},"end":{"line":5,"character":6}})
+    );
+}
+
+#[test]
 fn diagnostics_clear_after_links_are_fixed() {
     let doc_bad = "# A\n\n[bad](#Missing)\n";
     let doc_good = "# A\n\n[good](#A)\n";

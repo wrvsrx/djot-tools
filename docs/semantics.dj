@@ -76,7 +76,7 @@ Anchor ids are matched exactly. `#Conclusion` and `#conclusion` are different
 targets.
 
 If multiple elements define the same id in one document, the first indexed
-definition wins. Duplicate-anchor diagnostics are not currently emitted.
+definition wins and later definitions produce duplicate-anchor diagnostics.
 
 # References
 
