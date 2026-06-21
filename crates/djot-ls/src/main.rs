@@ -1876,6 +1876,11 @@ fn to_lsp_diagnostic(text: &str, uri: &Url, diagnostic: AnalysisDiagnostic) -> D
             ),
             None,
         ),
+        DiagnosticKind::InvalidTaskPrevTarget { id } => (
+            "invalid-task-prev-target",
+            format!("Task `prev` target `{}` must be a task.", id),
+            None,
+        ),
     };
 
     Diagnostic {

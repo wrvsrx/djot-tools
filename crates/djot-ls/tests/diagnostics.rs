@@ -132,6 +132,32 @@ fn diagnostics_report_unresolved_task_prev_anchor() {
 }
 
 #[test]
+fn diagnostics_report_task_prev_target_that_is_not_task() {
+    let doc = "{#note}\nPlain anchor.\n\n{prev=\"#note\"}\n::: task\nFollow-up task.\n:::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let diagnostics = last_diagnostics(&responses);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0]["code"], json!("invalid-task-prev-target"));
+    assert_eq!(
+        diagnostics[0]["message"],
+        json!("Task `prev` target `note` must be a task.")
+    );
+    assert_eq!(
+        diagnostics[0]["range"],
+        json!({"start":{"line":3,"character":7},"end":{"line":3,"character":12}})
+    );
+}
+
+#[test]
 fn diagnostics_clear_after_links_are_fixed() {
     let doc_bad = "# A\n\n[bad](#Missing)\n";
     let doc_good = "# A\n\n[good](#A)\n";

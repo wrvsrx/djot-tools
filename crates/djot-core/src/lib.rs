@@ -51,10 +51,10 @@ pub struct Anchor {
     pub explicit: bool,
 }
 
-/// A link in the document and what it points at.
+/// A semantic reference in the document and what it points at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reference {
-    /// Byte range of the whole link, for cursor hit-testing.
+    /// Byte range of the reference source, for cursor hit-testing.
     pub source: Range<usize>,
     /// Byte span of the target path inside the link source, if this link names
     /// a file path in editable source syntax.
@@ -63,6 +63,13 @@ pub struct Reference {
     /// names an anchor in editable source syntax.
     pub target_id_range: Option<Range<usize>>,
     pub target: RefTarget,
+    pub kind: ReferenceKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReferenceKind {
+    Link,
+    TaskPrev,
 }
 
 /// The resolved destination of a link. jotdown hands us a single destination
@@ -120,6 +127,9 @@ pub enum DiagnosticKind {
     MissingTaskDueForRecur,
     InvalidTaskRecur {
         recur: String,
+    },
+    InvalidTaskPrevTarget {
+        id: String,
     },
 }
 
@@ -305,6 +315,7 @@ pub fn build_index(text: &str) -> DocIndex {
                         target_path_range,
                         target_id_range,
                         target,
+                        kind: ReferenceKind::Link,
                     });
                 }
             }
@@ -748,10 +759,20 @@ impl Workspace {
             };
 
             if let Some(id) = target.id {
-                if !target_entry.index.anchors.contains_key(&id) {
+                let Some(anchor) = target_entry.index.anchors.get(&id) else {
                     diagnostics.push(AnalysisDiagnostic {
                         range: reference.source.clone(),
                         kind: DiagnosticKind::UnresolvedAnchor { id },
+                    });
+                    continue;
+                };
+
+                if reference.kind == ReferenceKind::TaskPrev
+                    && !anchor_targets_task(&target_entry.text, &anchor.range)
+                {
+                    diagnostics.push(AnalysisDiagnostic {
+                        range: reference.source.clone(),
+                        kind: DiagnosticKind::InvalidTaskPrevTarget { id },
                     });
                 }
             }
@@ -781,6 +802,16 @@ impl Workspace {
 
         diagnostics
     }
+}
+
+fn anchor_targets_task(text: &str, anchor_range: &Range<usize>) -> bool {
+    tasks(text)
+        .iter()
+        .any(|task| ranges_overlap(anchor_range, &task.range))
+}
+
+fn ranges_overlap(a: &Range<usize>, b: &Range<usize>) -> bool {
+    a.start < b.end && b.start < a.end
 }
 
 fn duplicate_anchor_diagnostics(text: &str) -> Vec<AnalysisDiagnostic> {
@@ -1031,6 +1062,7 @@ fn task_prev_reference(text: &str, span: &Range<usize>, attrs: &Attributes) -> O
         target_path_range,
         target_id_range,
         target,
+        kind: ReferenceKind::TaskPrev,
     })
 }
 
@@ -1458,6 +1490,7 @@ mod tests {
                         .clone()
                         .map(|range| text[range].to_string()),
                     reference.target.clone(),
+                    reference.kind,
                 )
             })
             .collect::<Vec<_>>();
@@ -1472,6 +1505,7 @@ mod tests {
                     RefTarget::Internal {
                         id: "old-task".to_string()
                     },
+                    ReferenceKind::TaskPrev,
                 ),
                 (
                     "other.dj#previous".to_string(),
@@ -1481,6 +1515,7 @@ mod tests {
                         path: "other.dj".to_string(),
                         id: Some("previous".to_string()),
                     },
+                    ReferenceKind::TaskPrev,
                 ),
             ]
         );
@@ -1782,6 +1817,32 @@ mod tests {
                     recur: "P1M1D".into(),
                 }
         }));
+    }
+
+    #[test]
+    fn workspace_reports_task_prev_target_that_is_not_a_task() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "{#note}\nPlain anchor.\n\n{prev=\"#note\"}\n::: task\nFollow-up task.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        let diagnostics = ws.diagnostics_for(&path);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].kind,
+            DiagnosticKind::InvalidTaskPrevTarget { id: "note".into() }
+        );
+        assert_eq!(&doc[diagnostics[0].range.clone()], "#note");
+    }
+
+    #[test]
+    fn workspace_accepts_task_prev_target_inherited_from_list_item() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "- {#previous-task}\n  ::: task\n  Previous task.\n  :::\n\n{prev=\"#previous-task\"}\n::: task\nFollow-up task.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        assert_eq!(ws.diagnostics_for(&path), Vec::new());
     }
 
     #[test]
