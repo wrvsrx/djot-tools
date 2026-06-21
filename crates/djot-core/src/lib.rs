@@ -94,7 +94,7 @@ pub struct Task {
     pub created: Option<String>,
     pub done: Option<String>,
     pub due: Option<String>,
-    pub repeat: Option<String>,
+    pub recur: Option<String>,
     pub prev: Option<String>,
 }
 
@@ -109,8 +109,8 @@ pub struct AnalysisDiagnostic {
 pub enum DiagnosticKind {
     UnresolvedAnchor { id: String },
     UnresolvedPath { path: String },
-    MissingTaskDueForRepeat,
-    InvalidTaskRepeat { repeat: String },
+    MissingTaskDueForRecur,
+    InvalidTaskRecur { recur: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,7 +347,7 @@ pub fn tasks(text: &str) -> Vec<Task> {
                     created: metadata.created,
                     done: metadata.done,
                     due: metadata.due,
-                    repeat: metadata.repeat,
+                    recur: metadata.recur,
                     prev: metadata.prev,
                     capturing_title: false,
                     captured_title: false,
@@ -739,15 +739,15 @@ impl Workspace {
         }
 
         for task in tasks(&entry.text) {
-            let Some(repeat) = task.repeat.as_deref() else {
+            let Some(recur) = task.recur.as_deref() else {
                 continue;
             };
 
-            if parse_repeat_rule(repeat).is_none() {
+            if parse_repeat_rule(recur).is_none() {
                 diagnostics.push(AnalysisDiagnostic {
                     range: task.range.clone(),
-                    kind: DiagnosticKind::InvalidTaskRepeat {
-                        repeat: repeat.to_string(),
+                    kind: DiagnosticKind::InvalidTaskRecur {
+                        recur: recur.to_string(),
                     },
                 });
             }
@@ -755,7 +755,7 @@ impl Workspace {
             if task.due.is_none() {
                 diagnostics.push(AnalysisDiagnostic {
                     range: task.range,
-                    kind: DiagnosticKind::MissingTaskDueForRepeat,
+                    kind: DiagnosticKind::MissingTaskDueForRecur,
                 });
             }
         }
@@ -764,8 +764,8 @@ impl Workspace {
     }
 }
 
-pub fn parse_repeat_rule(repeat: &str) -> Option<RepeatRule> {
-    let duration: IsoDuration = repeat.parse().ok()?;
+pub fn parse_repeat_rule(recur: &str) -> Option<RepeatRule> {
+    let duration: IsoDuration = recur.parse().ok()?;
     let units = [
         duration.year,
         duration.month,
@@ -1043,7 +1043,7 @@ struct TaskFrame {
     created: Option<String>,
     done: Option<String>,
     due: Option<String>,
-    repeat: Option<String>,
+    recur: Option<String>,
     prev: Option<String>,
     capturing_title: bool,
     captured_title: bool,
@@ -1056,7 +1056,7 @@ struct TaskMetadata {
     created: Option<String>,
     done: Option<String>,
     due: Option<String>,
-    repeat: Option<String>,
+    recur: Option<String>,
     prev: Option<String>,
 }
 
@@ -1066,7 +1066,7 @@ impl TaskMetadata {
             created: datetime_attribute(attrs, "created"),
             done: datetime_attribute(attrs, "done"),
             due: datetime_attribute(attrs, "due"),
-            repeat: string_attribute(attrs, "repeat"),
+            recur: string_attribute(attrs, "recur"),
             prev: string_attribute(attrs, "prev"),
         }
     }
@@ -1092,11 +1092,11 @@ impl TaskMetadata {
                     .due
                     .or_else(|| fallback.and_then(|metadata| metadata.due.clone())),
             },
-            repeat: match attrs.get_value("repeat") {
-                Some(_) => own.repeat,
+            recur: match attrs.get_value("recur") {
+                Some(_) => own.recur,
                 None => own
-                    .repeat
-                    .or_else(|| fallback.and_then(|metadata| metadata.repeat.clone())),
+                    .recur
+                    .or_else(|| fallback.and_then(|metadata| metadata.recur.clone())),
             },
             prev: match attrs.get_value("prev") {
                 Some(_) => own.prev,
@@ -1118,7 +1118,7 @@ impl TaskFrame {
             created: self.created,
             done: self.done,
             due: self.due,
-            repeat: self.repeat,
+            recur: self.recur,
             prev: self.prev,
         }
     }
@@ -1254,7 +1254,7 @@ mod tests {
 
     #[test]
     fn tasks_extract_task_divs() {
-        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\" repeat=\"P1W\" prev=\"#previous-task\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
+        let text = "{#write-parser}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nWrite parser.\n\nDetails.\n:::\n\n::: note\nNot a task.\n:::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
@@ -1265,7 +1265,7 @@ mod tests {
         );
         assert_eq!(found[0].done.as_deref(), Some("2026-06-19T21:30:00+08:00"));
         assert_eq!(found[0].due.as_deref(), Some("2026-06-20T09:00:00+08:00"));
-        assert_eq!(found[0].repeat.as_deref(), Some("P1W"));
+        assert_eq!(found[0].recur.as_deref(), Some("P1W"));
         assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
         assert_eq!(found[0].title, "Write parser.");
         assert_eq!(
@@ -1279,13 +1279,13 @@ mod tests {
 
     #[test]
     fn tasks_inherit_metadata_from_containing_list_item() {
-        let text = "- {created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" repeat=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
+        let text = "- {created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" recur=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].created.as_deref(), Some("2026-06-18T09:00:00Z"));
         assert_eq!(found[0].due.as_deref(), Some("2026-06-19T09:00:00Z"));
-        assert_eq!(found[0].repeat.as_deref(), Some("P1D"));
+        assert_eq!(found[0].recur.as_deref(), Some("P1D"));
         assert_eq!(found[0].prev.as_deref(), Some("#previous-task"));
         assert_eq!(found[0].done, None);
         assert_eq!(found[0].title, "Write parser.");
@@ -1519,7 +1519,7 @@ mod tests {
     #[test]
     fn workspace_reports_invalid_recurring_task_metadata() {
         let path = PathBuf::from("/notes/tasks.dj");
-        let doc = "{repeat=\"P1W\"}\n::: task\nMissing due.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1M1D\"}\n::: task\nInvalid repeat.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1W\"}\n::: task\nValid repeat.\n:::\n";
+        let doc = "{recur=\"P1W\"}\n::: task\nMissing due.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" recur=\"P1M1D\"}\n::: task\nInvalid recur.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" recur=\"P1W\"}\n::: task\nValid recur.\n:::\n";
         let mut ws = Workspace::new();
         ws.insert(path.clone(), doc.to_string());
 
@@ -1527,11 +1527,11 @@ mod tests {
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.kind == DiagnosticKind::MissingTaskDueForRepeat));
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::MissingTaskDueForRecur));
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.kind
-                == DiagnosticKind::InvalidTaskRepeat {
-                    repeat: "P1M1D".into(),
+                == DiagnosticKind::InvalidTaskRecur {
+                    recur: "P1M1D".into(),
                 }
         }));
     }
