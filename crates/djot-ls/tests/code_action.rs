@@ -232,7 +232,7 @@ fn code_action_marks_list_shaped_task_done() {
 
 #[test]
 fn code_action_marks_recurring_task_done_and_creates_next_instance() {
-    let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" repeat=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
+    let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" recur=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -289,7 +289,7 @@ fn code_action_marks_recurring_task_done_and_creates_next_instance() {
     assert!(next_insert.contains("{#Weekly-review-2026-06-28}\n"));
     assert!(next_insert.contains("{created=\"20"));
     assert!(next_insert.contains(
-        " due=\"2026-06-28T17:00:00+08:00\" repeat=\"P1W\" prev=\"#Weekly-review-2026-06-21\"}"
+        " due=\"2026-06-28T17:00:00+08:00\" recur=\"P1W\" prev=\"#Weekly-review-2026-06-21\"}"
     ));
     assert!(next_insert.contains("::: task\nWeekly review.\n:::\n"));
 }

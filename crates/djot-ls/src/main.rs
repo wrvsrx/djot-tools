@@ -1199,8 +1199,8 @@ fn recurring_task_completion_edit(
         task.done.is_none() && task.range.start <= offset && offset <= task.range.end
     })?;
     let due = DateTime::parse_from_rfc3339(task.due.as_deref()?).ok()?;
-    let repeat = task.repeat.as_deref()?;
-    let next_due = next_repeat_due(due, repeat)?;
+    let recur = task.recur.as_deref()?;
+    let next_due = next_recur_due(due, recur)?;
     let line_start = task_opening_fence_line_start(text, &task.range)?;
     let line = text.get(line_start..line_bounds(text, line_start)?.1)?;
     let indent = leading_indent(line);
@@ -1220,7 +1220,7 @@ fn recurring_task_completion_edit(
     };
     let next_id = task_instance_id(&task.title, next_due, &anchors, &reserved)?;
     let next_insert = line_bounds(text, task.range.end)?.1;
-    let repeat = escape_attribute_value(repeat);
+    let recur = escape_attribute_value(recur);
     let next_due_text = next_due.to_rfc3339_opts(SecondsFormat::Secs, true);
     let current_id_text = escape_attribute_value(&current_id);
     let div = text.get(task.range.clone())?;
@@ -1240,15 +1240,15 @@ fn recurring_task_completion_edit(
             TaskTextEdit {
                 range: next_insert..next_insert,
                 new_text: format!(
-                    "\n\n{{#{next_id}}}\n{{created=\"{done}\" due=\"{next_due_text}\" repeat=\"{repeat}\" prev=\"#{current_id_text}\"}}\n{div}"
+                    "\n\n{{#{next_id}}}\n{{created=\"{done}\" due=\"{next_due_text}\" recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}"
                 ),
             },
         ],
     })
 }
 
-fn next_repeat_due(due: DateTime<FixedOffset>, repeat: &str) -> Option<DateTime<FixedOffset>> {
-    let rule = parse_repeat_rule(repeat)?;
+fn next_recur_due(due: DateTime<FixedOffset>, recur: &str) -> Option<DateTime<FixedOffset>> {
+    let rule = parse_repeat_rule(recur)?;
     match rule {
         RepeatRule::Days(days) => Some(due + Duration::days(days)),
         RepeatRule::Weeks(weeks) => Some(due + Duration::weeks(weeks)),
@@ -1565,15 +1565,15 @@ fn to_lsp_diagnostic(text: &str, diagnostic: AnalysisDiagnostic) -> Diagnostic {
             "unresolved-path",
             format!("Unresolved Djot path `{}`", path),
         ),
-        DiagnosticKind::MissingTaskDueForRepeat => (
-            "missing-task-due-for-repeat",
-            "Recurring tasks with `repeat` need a valid RFC 3339 `due` datetime.".to_string(),
+        DiagnosticKind::MissingTaskDueForRecur => (
+            "missing-task-due-for-recur",
+            "Recurring tasks with `recur` need a valid RFC 3339 `due` datetime.".to_string(),
         ),
-        DiagnosticKind::InvalidTaskRepeat { repeat } => (
-            "invalid-task-repeat",
+        DiagnosticKind::InvalidTaskRecur { recur } => (
+            "invalid-task-recur",
             format!(
-                "Unsupported task `repeat` value `{}`. Use an ISO 8601 duration like `P1D`, `P1W`, `P1M`, or `P1Y`.",
-                repeat
+                "Unsupported task `recur` value `{}`. Use an ISO 8601 duration like `P1D`, `P1W`, `P1M`, or `P1Y`.",
+                recur
             ),
         ),
     };
@@ -1925,35 +1925,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn repeat_due_supports_iso_week_duration() {
+    fn recur_due_supports_iso_week_duration() {
         let due = DateTime::parse_from_rfc3339("2026-06-21T17:00:00+08:00").unwrap();
-        let next = next_repeat_due(due, "P1W").unwrap();
+        let next = next_recur_due(due, "P1W").unwrap();
 
         assert_eq!(next.to_rfc3339(), "2026-06-28T17:00:00+08:00");
     }
 
     #[test]
-    fn repeat_due_adds_calendar_months() {
+    fn recur_due_adds_calendar_months() {
         let due = DateTime::parse_from_rfc3339("2026-01-31T17:00:00+08:00").unwrap();
-        let next = next_repeat_due(due, "P1M").unwrap();
+        let next = next_recur_due(due, "P1M").unwrap();
 
         assert_eq!(next.to_rfc3339(), "2026-02-28T17:00:00+08:00");
     }
 
     #[test]
-    fn repeat_due_adds_calendar_years() {
+    fn recur_due_adds_calendar_years() {
         let due = DateTime::parse_from_rfc3339("2024-02-29T17:00:00+08:00").unwrap();
-        let next = next_repeat_due(due, "P1Y").unwrap();
+        let next = next_recur_due(due, "P1Y").unwrap();
 
         assert_eq!(next.to_rfc3339(), "2025-02-28T17:00:00+08:00");
     }
 
     #[test]
-    fn repeat_due_rejects_composite_and_time_durations() {
+    fn recur_due_rejects_composite_and_time_durations() {
         let due = DateTime::parse_from_rfc3339("2026-06-21T17:00:00+08:00").unwrap();
 
-        assert!(next_repeat_due(due, "P1M1D").is_none());
-        assert!(next_repeat_due(due, "PT1H").is_none());
-        assert!(next_repeat_due(due, "weekly").is_none());
+        assert!(next_recur_due(due, "P1M1D").is_none());
+        assert!(next_recur_due(due, "PT1H").is_none());
+        assert!(next_recur_due(due, "weekly").is_none());
     }
 }

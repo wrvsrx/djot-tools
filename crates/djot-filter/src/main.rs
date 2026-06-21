@@ -138,7 +138,7 @@ struct TaskRecord<'a> {
     created: Option<&'a str>,
     done: Option<&'a str>,
     due: Option<&'a str>,
-    repeat: Option<&'a str>,
+    recur: Option<&'a str>,
     prev: Option<&'a str>,
 }
 
@@ -192,7 +192,7 @@ impl QueryPlan {
         context.add_variable_from_value("created", record.created.map(str::to_string));
         context.add_variable_from_value("done", record.done.map(str::to_string));
         context.add_variable_from_value("due", record.due.map(str::to_string));
-        context.add_variable_from_value("repeat", record.repeat.map(str::to_string));
+        context.add_variable_from_value("recur", record.recur.map(str::to_string));
         context.add_variable_from_value("prev", record.prev.map(str::to_string));
 
         match self.program.execute(&context) {
@@ -650,7 +650,7 @@ fn task_matches(
         created: task.created.as_deref(),
         done: task.done.as_deref(),
         due: task.due.as_deref(),
-        repeat: task.repeat.as_deref(),
+        recur: task.recur.as_deref(),
         prev: task.prev.as_deref(),
     })
 }
@@ -828,7 +828,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("tasks.dj"),
-            "{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" repeat=\"P1W\" prev=\"#previous-task\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n",
+            "{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n",
         )
         .unwrap();
 
@@ -840,7 +840,7 @@ mod tests {
         let created = QueryPlan::compile("created == '2026-06-18T09:00:00+08:00'").unwrap();
         let done = QueryPlan::compile("done != null && title.matches('Done')").unwrap();
         let recurring = QueryPlan::compile(
-            "due == '2026-06-20T09:00:00+08:00' && repeat == 'P1W' && prev == '#previous-task'",
+            "due == '2026-06-20T09:00:00+08:00' && recur == 'P1W' && prev == '#previous-task'",
         )
         .unwrap();
 

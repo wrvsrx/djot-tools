@@ -43,7 +43,7 @@ fn diagnostics_report_unresolved_links() {
 
 #[test]
 fn diagnostics_report_invalid_recurring_task_metadata() {
-    let doc = "{repeat=\"P1W\"}\n::: task\nMissing due.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1M1D\"}\n::: task\nInvalid repeat.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1W\"}\n::: task\nValid repeat.\n:::\n";
+    let doc = "{recur=\"P1W\"}\n::: task\nMissing due.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" recur=\"P1M1D\"}\n::: task\nInvalid recur.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" recur=\"P1W\"}\n::: task\nValid recur.\n:::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -64,12 +64,12 @@ fn diagnostics_report_invalid_recurring_task_metadata() {
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 2);
-    assert!(codes.contains(&"missing-task-due-for-repeat".to_string()));
-    assert!(codes.contains(&"invalid-task-repeat".to_string()));
+    assert!(codes.contains(&"missing-task-due-for-recur".to_string()));
+    assert!(codes.contains(&"invalid-task-recur".to_string()));
     assert!(messages.contains(
-        &"Recurring tasks with `repeat` need a valid RFC 3339 `due` datetime.".to_string()
+        &"Recurring tasks with `recur` need a valid RFC 3339 `due` datetime.".to_string()
     ));
-    assert!(messages.contains(&"Unsupported task `repeat` value `P1M1D`. Use an ISO 8601 duration like `P1D`, `P1W`, `P1M`, or `P1Y`.".to_string()));
+    assert!(messages.contains(&"Unsupported task `recur` value `P1M1D`. Use an ISO 8601 duration like `P1D`, `P1W`, `P1M`, or `P1Y`.".to_string()));
 }
 
 #[test]
