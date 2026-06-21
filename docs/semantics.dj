@@ -165,15 +165,15 @@ Current task fields are intentionally minimal:
 - `due`: an RFC 3339 datetime string recording when the current task instance
   is due.
 - `done`: an RFC 3339 datetime string recording when the task was completed.
-- `repeat`: an ISO 8601 duration string describing how tooling should create
+- `recur`: an ISO 8601 duration string describing how tooling should create
   the next task instance after completing this one. Current tooling accepts one
   positive integer date unit: `PnD`, `PnW`, `PnM`, or `PnY`.
 - `prev`: a Djot target such as `#weekly-review-2026-06-21` pointing to the
   previous task instance in a repeated chain.
 
-A task with `due` and `repeat` is a recurring task instance. When completed
+A task with `due` and `recur` is a recurring task instance. When completed
 through tooling, the completed instance keeps its `done` timestamp and a new
-task instance is appended with the next `due`, the same `repeat`, and `prev`
+task instance is appended with the next `due`, the same `recur`, and `prev`
 pointing back to the completed task. Automatically generated recurring task ids
 use the Djot heading identifier derived from the task title plus the due date,
 such as `weekly-review-2026-06-21`.
@@ -199,8 +199,8 @@ reference diagnostics.
 
 They also include recurring task metadata warnings:
 
-- a task with `repeat` but without a recognized RFC 3339 `due` datetime
-- a task with a `repeat` value outside the currently supported ISO 8601
+- a task with `recur` but without a recognized RFC 3339 `due` datetime
+- a task with a `recur` value outside the currently supported ISO 8601
   duration subset (`PnD`, `PnW`, `PnM`, or `PnY`)
 
 Because cross-file diagnostics depend on the workspace, they are only complete

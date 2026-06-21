@@ -207,7 +207,7 @@ All binaries reuse `djot-core` without pulling in each other's types.
   creates a new file from the current query relative to the scan root, rejects
   empty or root-escaping paths, adds `.dj` when the query lacks a `.dj` /
   `.djot` extension, and opens the created file with `$EDITOR`.
-- `tasks` queries expose task `title`, `created`, `due`, `done`, `repeat`, and
+- `tasks` queries expose task `title`, `created`, `due`, `done`, `recur`, and
   `prev` fields.
 - Unit tests live in the same file and cover CEL query behavior, reverse
   reference predicates, skim item behavior, editor command handling, and file

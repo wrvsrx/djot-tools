@@ -84,7 +84,7 @@ no `.dj` / `.djot` extension, and opens it with `EDITOR`.
 
 The `tasks` subcommand prints task blocks and applies the same `--query`
 mechanism to task records. Task queries expose `title`, `created`, `due`,
-`done`, `repeat`, and `prev`.
+`done`, `recur`, and `prev`.
 
 ## Build
 
