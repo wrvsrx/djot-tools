@@ -117,6 +117,19 @@ support.
 - [x] `wait` task metadata for deferred open tasks, including timestamp task
   queries, `now`, and recurring-task advancement
 
+- [ ] Add lightweight subtask rendering for nested task divs:
+
+  - Treat nested `task` divs as structural subtasks for display purposes, but
+    do not add parent/child query semantics in the first pass.
+  - Add a task depth field from `djot-core::tasks`; depth is enough for
+    rendering and avoids deciding how to identify anonymous parent tasks.
+  - Keep `djot-filter tasks` as the current flat table by default.
+  - Add `djot-filter tasks --tree` to render nested tasks by prefixing the title
+    column with ASCII markers, such as `> Child task` and `  > Grandchild task`.
+  - Keep table columns unchanged; only the title cell changes in tree mode.
+  - Leave richer fields such as `parent`, `children`, `has_open_children`, and
+    dependency-aware `actionable` for a later semantic pass.
+
 # Notes
 
 Current metadata semantics are documented in [semantics](semantics.dj#Metadata).
