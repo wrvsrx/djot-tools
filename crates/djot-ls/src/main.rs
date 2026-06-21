@@ -22,12 +22,12 @@ use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
     CodeActionProviderCapability, CodeActionResponse, CompletionItem, CompletionItemKind,
     CompletionOptions, CompletionParams, CompletionResponse, CompletionTextEdit, Diagnostic,
-    DiagnosticSeverity, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
-    DocumentChangeOperation, DocumentChanges, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-    HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
-    Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
+    DiagnosticRelatedInformation, DiagnosticSeverity, DidChangeConfigurationParams,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams, DocumentChangeOperation, DocumentChanges, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
+    InitializedParams, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, PrepareRenameResponse, ProgressParams,
     ProgressParamsValue, PublishDiagnosticsParams, Range, ReferenceParams, RenameFile,
     RenameFileOptions, RenameOptions, RenameParams, ResourceOp, ResourceOperationKind,
@@ -333,7 +333,7 @@ impl ServerState {
             .workspace
             .diagnostics_for(path)
             .into_iter()
-            .map(|diagnostic| to_lsp_diagnostic(&entry.text, diagnostic))
+            .map(|diagnostic| to_lsp_diagnostic(&entry.text, &uri, diagnostic))
             .collect();
 
         let _ = self
@@ -1556,22 +1556,28 @@ fn rename_target_outside_workspace_error() -> ResponseError {
     )
 }
 
-fn to_lsp_diagnostic(text: &str, diagnostic: AnalysisDiagnostic) -> Diagnostic {
-    let (code, message) = match diagnostic.kind {
+fn to_lsp_diagnostic(text: &str, uri: &Url, diagnostic: AnalysisDiagnostic) -> Diagnostic {
+    let (code, message, related_information) = match diagnostic.kind {
         DiagnosticKind::UnresolvedAnchor { id } => {
-            ("unresolved-anchor", format!("Unresolved anchor `{}`", id))
+            ("unresolved-anchor", format!("Unresolved anchor `{}`", id), None)
         }
         DiagnosticKind::UnresolvedPath { path } => (
             "unresolved-path",
             format!("Unresolved Djot path `{}`", path),
+            None,
         ),
-        DiagnosticKind::DuplicateAnchor { id } => (
+        DiagnosticKind::DuplicateAnchor { id, first_range } => (
             "duplicate-anchor",
             format!("Duplicate anchor `{}`", id),
+            Some(vec![DiagnosticRelatedInformation {
+                location: Location::new(uri.clone(), byte_range_to_lsp(text, &first_range)),
+                message: "First definition is here.".to_string(),
+            }]),
         ),
         DiagnosticKind::MissingTaskDueForRecur => (
             "missing-task-due-for-recur",
             "Recurring tasks with `recur` need a valid RFC 3339 `due` datetime.".to_string(),
+            None,
         ),
         DiagnosticKind::InvalidTaskRecur { recur } => (
             "invalid-task-recur",
@@ -1579,6 +1585,7 @@ fn to_lsp_diagnostic(text: &str, diagnostic: AnalysisDiagnostic) -> Diagnostic {
                 "Unsupported task `recur` value `{}`. Use an ISO 8601 duration like `P1D`, `P1W`, `P1M`, or `P1Y`.",
                 recur
             ),
+            None,
         ),
     };
 
@@ -1589,7 +1596,7 @@ fn to_lsp_diagnostic(text: &str, diagnostic: AnalysisDiagnostic) -> Diagnostic {
         code_description: None,
         source: Some("djot-ls".to_string()),
         message,
-        related_information: None,
+        related_information,
         tags: None,
         data: None,
     }

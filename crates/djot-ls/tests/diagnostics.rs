@@ -93,6 +93,16 @@ fn diagnostics_report_duplicate_anchors() {
         diagnostics[0]["range"],
         json!({"start":{"line":5,"character":2},"end":{"line":5,"character":6}})
     );
+    assert_eq!(
+        diagnostics[0]["relatedInformation"],
+        json!([{
+            "location": {
+                "uri": "file:///tasks.dj",
+                "range": {"start":{"line":0,"character":2},"end":{"line":0,"character":6}}
+            },
+            "message": "First definition is here."
+        }])
+    );
 }
 
 #[test]

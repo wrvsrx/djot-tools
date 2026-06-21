@@ -107,11 +107,20 @@ pub struct AnalysisDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiagnosticKind {
-    UnresolvedAnchor { id: String },
-    UnresolvedPath { path: String },
-    DuplicateAnchor { id: String },
+    UnresolvedAnchor {
+        id: String,
+    },
+    UnresolvedPath {
+        path: String,
+    },
+    DuplicateAnchor {
+        id: String,
+        first_range: Range<usize>,
+    },
     MissingTaskDueForRecur,
-    InvalidTaskRecur { recur: String },
+    InvalidTaskRecur {
+        recur: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -823,10 +832,13 @@ fn record_anchor_occurrence(
     id: String,
     range: Range<usize>,
 ) {
-    if seen.contains_key(&id) {
+    if let Some(first_range) = seen.get(&id) {
         diagnostics.push(AnalysisDiagnostic {
             range,
-            kind: DiagnosticKind::DuplicateAnchor { id },
+            kind: DiagnosticKind::DuplicateAnchor {
+                id,
+                first_range: first_range.clone(),
+            },
         });
     } else {
         seen.insert(id, range);
@@ -1616,7 +1628,10 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].kind,
-            DiagnosticKind::DuplicateAnchor { id: "task".into() }
+            DiagnosticKind::DuplicateAnchor {
+                id: "task".into(),
+                first_range: 2..6,
+            }
         );
         assert_eq!(&doc[diagnostics[0].range.clone()], "task");
     }
