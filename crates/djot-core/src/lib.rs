@@ -353,7 +353,7 @@ pub fn tasks(text: &str) -> Vec<Task> {
                 let metadata = TaskMetadata::from_attributes_with_fallback(&attrs, inherited);
                 stack.push(TaskFrame {
                     range_start: span.start,
-                    id: attrs.get_value("id").map(|value| value.to_string()),
+                    id: metadata.id,
                     created: metadata.created,
                     done: metadata.done,
                     due: metadata.due,
@@ -1134,6 +1134,7 @@ struct TaskFrame {
 
 #[derive(Clone)]
 struct TaskMetadata {
+    id: Option<String>,
     created: Option<String>,
     done: Option<String>,
     due: Option<String>,
@@ -1144,6 +1145,7 @@ struct TaskMetadata {
 impl TaskMetadata {
     fn from_attributes(attrs: &Attributes) -> Self {
         Self {
+            id: string_attribute(attrs, "id"),
             created: datetime_attribute(attrs, "created"),
             done: datetime_attribute(attrs, "done"),
             due: datetime_attribute(attrs, "due"),
@@ -1155,6 +1157,12 @@ impl TaskMetadata {
     fn from_attributes_with_fallback(attrs: &Attributes, fallback: Option<&Self>) -> Self {
         let own = Self::from_attributes(attrs);
         Self {
+            id: match attrs.get_value("id") {
+                Some(_) => own.id,
+                None => own
+                    .id
+                    .or_else(|| fallback.and_then(|metadata| metadata.id.clone())),
+            },
             created: match attrs.get_value("created") {
                 Some(_) => own.created,
                 None => own
@@ -1360,10 +1368,11 @@ mod tests {
 
     #[test]
     fn tasks_inherit_metadata_from_containing_list_item() {
-        let text = "- {created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" recur=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
+        let text = "- {#write-parser created=\"2026-06-18T09:00:00Z\" due=\"2026-06-19T09:00:00Z\" recur=\"P1D\" prev=\"#previous-task\"}\n  ::: task\n  Write parser.\n  :::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id.as_deref(), Some("write-parser"));
         assert_eq!(found[0].created.as_deref(), Some("2026-06-18T09:00:00Z"));
         assert_eq!(found[0].due.as_deref(), Some("2026-06-19T09:00:00Z"));
         assert_eq!(found[0].recur.as_deref(), Some("P1D"));
