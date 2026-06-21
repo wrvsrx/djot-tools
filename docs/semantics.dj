@@ -188,7 +188,7 @@ div. Later blocks are task details.
 
 # Diagnostics
 
-The current semantic diagnostics are unresolved Djot references:
+The current semantic diagnostics include unresolved Djot references:
 
 - missing same-document anchors (`#id`)
 - missing `.dj` or `.djot` target files
@@ -196,6 +196,12 @@ The current semantic diagnostics are unresolved Djot references:
 
 External URLs, non-Djot file links, and directory links are outside these
 reference diagnostics.
+
+They also include recurring task metadata warnings:
+
+- a task with `repeat` but without a recognized RFC 3339 `due` datetime
+- a task with a `repeat` value outside the currently supported ISO 8601
+  duration subset (`PnD`, `PnW`, `PnM`, or `PnY`)
 
 Because cross-file diagnostics depend on the workspace, they are only complete
 for documents that have been loaded into the workspace.
