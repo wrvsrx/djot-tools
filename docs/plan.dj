@@ -117,6 +117,19 @@ support.
 - [x] `wait` task metadata for deferred open tasks, including timestamp task
   queries, `now`, and recurring-task advancement
 
+- [ ] Define a shared spelling for task reference attributes:
+
+  - Apply the convention to the existing single-target `prev` attribute and to
+    future multi-target attributes such as `depends`.
+  - Use Djot link-destination style targets: `#task-id` for same-file anchors
+    and `path.dj#task-id` for cross-file task anchors.
+  - Prefer percent-encoded paths for cross-file references when a path contains
+    raw spaces, e.g. `Project%20Plan.dj#review`, so the same target spelling
+    can work inside both single-value attributes and whitespace-separated token
+    lists.
+  - Normalize parsed targets internally to workspace path plus task id before
+    comparing, querying, renaming, or generating recurring-task `prev` values.
+
 - [ ] Add CLI actions for completing, reopening, and recurring tasks:
 
   - Support direct task targets such as `path/to/file.dj#task-id`.
@@ -139,9 +152,8 @@ support.
     The value is a whitespace-separated token list of task references.
   - Treat same-file tokens as task ids, accepting either `draft-task` or
     `#draft-task`; treat cross-file tokens as `path.dj#task-id`.
-  - Require raw spaces in cross-file paths to be percent-encoded, e.g.
-    `Project%20Plan.dj#review`, so dependency lists can stay whitespace
-    separated.
+  - Reuse the shared task reference spelling, including percent-encoded paths
+    for cross-file references whose file names contain spaces.
   - Normalize dependency targets internally to workspace path plus task id, and
     emit diagnostics for unresolved targets, non-task targets, self-dependency,
     and dependency cycles.
