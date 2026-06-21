@@ -589,7 +589,7 @@ impl Workspace {
         offset: usize,
     ) -> Result<RenameTarget, RenameTargetError> {
         let path = normalize(path);
-        if let Some((id, anchor)) = self.anchor_at(&path, offset) {
+        if let Some((id, anchor)) = self.anchor_rename_at(&path, offset) {
             if !anchor.explicit {
                 return Err(RenameTargetError::ImplicitHeadingAnchor);
             }
@@ -625,6 +625,15 @@ impl Workspace {
             id,
             range: target_id_range,
         })
+    }
+
+    fn anchor_rename_at(&self, path: &Path, offset: usize) -> Option<(&str, &Anchor)> {
+        self.get(path)?
+            .index
+            .anchors
+            .iter()
+            .find(|(_, anchor)| contains_inclusive(&anchor.rename_range, offset))
+            .map(|(id, anchor)| (id.as_str(), anchor))
     }
 
     /// Every editable source range that should be replaced when renaming the
@@ -1658,6 +1667,35 @@ mod tests {
         assert_eq!(&doc_a[from_reference.range], "topic");
         assert_eq!(
             ws.rename_target_at(&a, doc_a.find("b.dj").unwrap()),
+            Err(RenameTargetError::NotRenameable)
+        );
+    }
+
+    #[test]
+    fn workspace_renames_anchor_only_from_rename_range() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "{#topic}\n::: task\nTask title.\n:::\n\n- {#list-task}\n  ::: task\n  List task title.\n  :::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        let from_anchor = ws
+            .rename_target_at(&path, doc.find("topic").unwrap())
+            .expect("rename target from explicit anchor");
+        assert_eq!(from_anchor.id, "topic");
+        assert_eq!(&doc[from_anchor.range], "topic");
+
+        let from_list_anchor = ws
+            .rename_target_at(&path, doc.find("list-task").unwrap())
+            .expect("rename target from list item anchor");
+        assert_eq!(from_list_anchor.id, "list-task");
+        assert_eq!(&doc[from_list_anchor.range], "list-task");
+
+        assert_eq!(
+            ws.rename_target_at(&path, doc.find("Task title").unwrap()),
+            Err(RenameTargetError::NotRenameable)
+        );
+        assert_eq!(
+            ws.rename_target_at(&path, doc.find("List task title").unwrap()),
             Err(RenameTargetError::NotRenameable)
         );
     }
