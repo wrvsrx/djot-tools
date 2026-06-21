@@ -117,6 +117,18 @@ support.
 - [x] `wait` task metadata for deferred open tasks, including timestamp task
   queries, `now`, and recurring-task advancement
 
+- [ ] Add CLI actions for completing, reopening, and recurring tasks:
+
+  - Support direct task targets such as `path/to/file.dj#task-id`.
+  - Add explicit actions for marking a task done and removing `done`.
+  - Add a recur action that advances an already-completed recurring task by
+    appending the next open instance, preserving the completed task as history.
+  - Reuse the same core task editing semantics as the LSP code actions so CLI
+    and editor behavior stay consistent.
+  - Consider batch and interactive forms after the direct action exists, such as
+    applying an action to `djot-filter tasks --query ...` results or selected
+    skim items.
+
 - [ ] Add lightweight subtask rendering for nested task divs:
 
   - Treat nested `task` divs as structural subtasks for display purposes, but
