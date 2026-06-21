@@ -10,6 +10,7 @@ use std::ffi::OsString;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 
+use iso8601_duration::Duration as IsoDuration;
 use jotdown::{Attributes, Container, Event, Parser};
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +109,16 @@ pub struct AnalysisDiagnostic {
 pub enum DiagnosticKind {
     UnresolvedAnchor { id: String },
     UnresolvedPath { path: String },
+    MissingTaskDueForRepeat,
+    InvalidTaskRepeat { repeat: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatRule {
+    Days(i64),
+    Weeks(i64),
+    Months(i32),
+    Years(i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -727,7 +738,80 @@ impl Workspace {
             }
         }
 
+        for task in tasks(&entry.text) {
+            let Some(repeat) = task.repeat.as_deref() else {
+                continue;
+            };
+
+            if parse_repeat_rule(repeat).is_none() {
+                diagnostics.push(AnalysisDiagnostic {
+                    range: task.range.clone(),
+                    kind: DiagnosticKind::InvalidTaskRepeat {
+                        repeat: repeat.to_string(),
+                    },
+                });
+            }
+
+            if task.due.is_none() {
+                diagnostics.push(AnalysisDiagnostic {
+                    range: task.range,
+                    kind: DiagnosticKind::MissingTaskDueForRepeat,
+                });
+            }
+        }
+
         diagnostics
+    }
+}
+
+pub fn parse_repeat_rule(repeat: &str) -> Option<RepeatRule> {
+    let duration: IsoDuration = repeat.parse().ok()?;
+    let units = [
+        duration.year,
+        duration.month,
+        duration.day,
+        duration.hour,
+        duration.minute,
+        duration.second,
+    ];
+    if units.iter().filter(|value| **value > 0.0).count() != 1 {
+        return None;
+    }
+    if duration.hour > 0.0 || duration.minute > 0.0 || duration.second > 0.0 {
+        return None;
+    }
+    if duration.year > 0.0 {
+        return integer_f32(duration.year).and_then(|years| {
+            i32::try_from(years)
+                .ok()
+                .filter(|years| *years > 0)
+                .map(RepeatRule::Years)
+        });
+    }
+    if duration.month > 0.0 {
+        return integer_f32(duration.month).and_then(|months| {
+            i32::try_from(months)
+                .ok()
+                .filter(|months| *months > 0)
+                .map(RepeatRule::Months)
+        });
+    }
+    integer_f32(duration.day).and_then(|days| {
+        if days > 0 && days % 7 == 0 {
+            Some(RepeatRule::Weeks(days / 7))
+        } else if days > 0 {
+            Some(RepeatRule::Days(days))
+        } else {
+            None
+        }
+    })
+}
+
+fn integer_f32(value: f32) -> Option<i64> {
+    if value.fract() == 0.0 && value <= i64::MAX as f32 {
+        Some(value as i64)
+    } else {
+        None
     }
 }
 
@@ -1430,6 +1514,37 @@ mod tests {
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.kind == DiagnosticKind::UnresolvedAnchor { id: "Nope".into() }
         }));
+    }
+
+    #[test]
+    fn workspace_reports_invalid_recurring_task_metadata() {
+        let path = PathBuf::from("/notes/tasks.dj");
+        let doc = "{repeat=\"P1W\"}\n::: task\nMissing due.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1M1D\"}\n::: task\nInvalid repeat.\n:::\n\n{due=\"2026-06-21T09:00:00+08:00\" repeat=\"P1W\"}\n::: task\nValid repeat.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(path.clone(), doc.to_string());
+
+        let diagnostics = ws.diagnostics_for(&path);
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::MissingTaskDueForRepeat));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::InvalidTaskRepeat {
+                    repeat: "P1M1D".into(),
+                }
+        }));
+    }
+
+    #[test]
+    fn repeat_rule_accepts_supported_iso_duration_subset() {
+        assert_eq!(parse_repeat_rule("P1D"), Some(RepeatRule::Days(1)));
+        assert_eq!(parse_repeat_rule("P2W"), Some(RepeatRule::Weeks(2)));
+        assert_eq!(parse_repeat_rule("P1M"), Some(RepeatRule::Months(1)));
+        assert_eq!(parse_repeat_rule("P1Y"), Some(RepeatRule::Years(1)));
+        assert_eq!(parse_repeat_rule("P1M1D"), None);
+        assert_eq!(parse_repeat_rule("PT1H"), None);
+        assert_eq!(parse_repeat_rule("weekly"), None);
     }
 
     #[test]
