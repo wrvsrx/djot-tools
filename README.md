@@ -83,8 +83,9 @@ current query, relative to `--root`, adds a `.dj` extension when the query has
 no `.dj` / `.djot` extension, and opens it with `EDITOR`.
 
 The `tasks` subcommand prints task blocks and applies the same `--query`
-mechanism to task records. Task queries expose `title`, `created`, `due`,
-`done`, `recur`, and `prev`.
+mechanism to task records. Task output uses `-` for open tasks, `o` for done
+tasks, and `x` for canceled tasks. Task queries expose `path`, `id`, `title`,
+`created`, `due`, `done`, `canceled`, `recur`, and `prev`.
 
 ## Build
 

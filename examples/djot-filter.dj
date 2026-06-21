@@ -39,6 +39,7 @@ by the `djot-ls` "Convert to task div" code action.
 djot-filter tasks --root examples
 djot-filter tasks --root examples --query 'created != null && done == null'
 djot-filter tasks --root examples --query 'done != null'
+djot-filter tasks --root examples --query 'canceled != null'
 ```
 
 {#try-task-query}
@@ -61,6 +62,13 @@ This unfinished task should match `done == null`.
 Read the filter results.
 
 This completed task should match `done != null`.
+:::
+
+{created="2026-06-20T12:00:00+08:00" canceled="2026-06-20T13:00:00+08:00"}
+::: task
+Try the abandoned output shape.
+
+This canceled task should match `canceled != null`.
 :::
 
 # Cross references

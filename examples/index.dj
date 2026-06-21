@@ -22,6 +22,7 @@ djot-filter notes --root examples --query 'title.matches("playground")'
 djot-filter notes --root examples --query '"index.dj" in directly_referenced_by'
 djot-filter tasks --root examples --query 'created != null && done == null'
 djot-filter tasks --root examples --query 'done != null'
+djot-filter tasks --root examples --query 'canceled != null'
 ```
 
 The three linked files intentionally cross-reference each other so

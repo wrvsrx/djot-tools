@@ -101,8 +101,8 @@ support.
 
 - [ ] Add editor/tooling affordances once the core task model exists:
 
-  - [ ] hover summary for completion state, id, created datetime, done datetime,
-    and title
+  - [ ] hover summary for completion state, id, created datetime, done/canceled
+    datetime, and title
   - [ ] document symbols for tasks
   - [x] code action to add `done`
   - [x] `done` code action completes recurring task instances by appending the
@@ -111,8 +111,8 @@ support.
     item instead of an indented task block in the same list item
   - [ ] code action to remove `done`
   - [x] code action to convert a native Djot task list item into a task div
-  - [ ] filter tasks by completion state, created datetime, and done datetime in
-    `djot-filter`
+  - [x] filter tasks by completion state, created datetime, and done/canceled
+    datetime in `djot-filter`
 
 # Notes
 

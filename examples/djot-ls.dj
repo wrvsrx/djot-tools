@@ -98,3 +98,11 @@ First duplicate target.
 
 {#duplicate-anchor}
 Second duplicate target.
+
+This task is intentionally both done and canceled so task metadata diagnostics
+have something to report:
+
+{done="2026-06-21T09:00:00Z" canceled="2026-06-21T10:00:00Z"}
+::: task
+Conflicting closed task state.
+:::
