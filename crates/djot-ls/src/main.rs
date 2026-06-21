@@ -1220,7 +1220,7 @@ fn recurring_task_completion_edit(
     let recur = escape_attribute_value(recur);
     let next_due_text = next_due.to_rfc3339_opts(SecondsFormat::Secs, true);
     let current_id_text = escape_attribute_value(&current_id);
-    let div = text.get(task.range.clone())?;
+    let div = ensure_block_indent(text.get(task.range.clone())?, indent);
 
     let mut done_text = String::new();
     if task.id.is_none() {
@@ -1242,6 +1242,24 @@ fn recurring_task_completion_edit(
             },
         ],
     })
+}
+
+fn ensure_block_indent(block: &str, indent: &str) -> String {
+    if indent.is_empty() {
+        return block.to_string();
+    }
+
+    let mut out = String::new();
+    for line in block.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\r', '\n']);
+        if content.is_empty() || line.starts_with(indent) {
+            out.push_str(line);
+        } else {
+            out.push_str(indent);
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 fn next_recur_due(due: DateTime<FixedOffset>, recur: &str) -> Option<DateTime<FixedOffset>> {

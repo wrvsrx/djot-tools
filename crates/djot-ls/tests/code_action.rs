@@ -343,6 +343,7 @@ fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
         .expect("newText is not a string");
     assert!(next_insert.contains("\n\n  {#Daily-review-2026-06-22}\n"));
     assert!(next_insert.contains("  {created=\"20"));
+    assert!(!next_insert.contains("\n{created=\"2026-06-20T09:30:00Z\""));
     assert!(next_insert
         .contains(" due=\"2026-06-22T17:00:00+08:00\" recur=\"P1D\" prev=\"#daily-review\"}"));
     assert!(next_insert.contains("  ::: task\n  Daily review.\n  :::\n"));
