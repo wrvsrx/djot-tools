@@ -6,6 +6,7 @@ use std::process::{Command, ExitCode};
 use std::sync::Arc;
 
 use cel::{Context, ExecutionError, Program, Value};
+use chrono::{DateTime, FixedOffset, Local};
 use clap::{Args, Parser, Subcommand};
 use comfy_table::{presets::NOTHING, ContentArrangement, Table};
 use djot_core::{metadata_block, resolve_target, tasks, Task, Workspace};
@@ -124,6 +125,7 @@ struct LoadedDocs {
 
 struct QueryPlan {
     program: Program,
+    now: DateTime<FixedOffset>,
 }
 
 struct DocumentRecord<'a> {
@@ -142,6 +144,7 @@ struct TaskRecord<'a> {
     done: Option<&'a str>,
     canceled: Option<&'a str>,
     due: Option<&'a str>,
+    wait: Option<&'a str>,
     recur: Option<&'a str>,
     prev: Option<&'a str>,
 }
@@ -155,9 +158,13 @@ struct TaskOutputRecord {
 
 impl QueryPlan {
     fn compile(source: &str) -> Result<Self, String> {
+        Self::compile_at(source, Local::now().fixed_offset())
+    }
+
+    fn compile_at(source: &str, now: DateTime<FixedOffset>) -> Result<Self, String> {
         let program =
             Program::compile(source).map_err(|err| format!("invalid CEL query: {err}"))?;
-        Ok(Self { program })
+        Ok(Self { program, now })
     }
 
     fn matches(&self, record: DocumentRecord<'_>) -> Result<bool, String> {
@@ -202,10 +209,12 @@ impl QueryPlan {
         context.add_variable_from_value("path", display_path(record.root, record.path));
         context.add_variable_from_value("id", record.id.map(str::to_string));
         context.add_variable_from_value("title", record.title.to_string());
-        context.add_variable_from_value("created", record.created.map(str::to_string));
-        context.add_variable_from_value("done", record.done.map(str::to_string));
-        context.add_variable_from_value("canceled", record.canceled.map(str::to_string));
-        context.add_variable_from_value("due", record.due.map(str::to_string));
+        context.add_variable_from_value("created", datetime_value(record.created));
+        context.add_variable_from_value("done", datetime_value(record.done));
+        context.add_variable_from_value("canceled", datetime_value(record.canceled));
+        context.add_variable_from_value("due", datetime_value(record.due));
+        context.add_variable_from_value("wait", datetime_value(record.wait));
+        context.add_variable_from_value("now", Value::Timestamp(self.now));
         context.add_variable_from_value("recur", record.recur.map(str::to_string));
         context.add_variable_from_value("prev", record.prev.map(str::to_string));
 
@@ -413,6 +422,12 @@ fn document_title(text: &str) -> Option<String> {
         .get("title")
         .and_then(|title| title.as_str())
         .map(str::to_string)
+}
+
+fn datetime_value(value: Option<&str>) -> Value {
+    value
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map_or(Value::Null, Value::Timestamp)
 }
 
 fn value_type_name(value: &Value) -> &'static str {
@@ -671,6 +686,7 @@ fn task_matches(
         done: task.done.as_deref(),
         canceled: task.canceled.as_deref(),
         due: task.due.as_deref(),
+        wait: task.wait.as_deref(),
         recur: task.recur.as_deref(),
         prev: task.prev.as_deref(),
     })
@@ -870,7 +886,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("tasks.dj"),
-            "{#open-task}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n\n{created=\"2026-06-20T09:00:00+08:00\" canceled=\"2026-06-20T21:30:00+08:00\"}\n::: task\nCanceled task\n:::\n",
+            "{#open-task}\n{created=\"2026-06-18T09:00:00+08:00\" due=\"2026-06-20T09:00:00+08:00\" wait=\"2026-06-19T09:00:00+08:00\" recur=\"P1W\" prev=\"#previous-task\"}\n::: task\nOpen task\n:::\n\n{created=\"2026-06-19T09:00:00+08:00\" done=\"2026-06-19T21:30:00+08:00\"}\n::: task\nDone task\n:::\n\n{created=\"2026-06-20T09:00:00+08:00\" canceled=\"2026-06-20T21:30:00+08:00\" wait=\"2026-06-23T09:00:00+08:00\"}\n::: task\nCanceled task\n:::\n",
         )
         .unwrap();
 
@@ -879,11 +895,22 @@ mod tests {
         let text = docs.texts.get(&path).unwrap();
         let found = tasks(text);
         let open = QueryPlan::compile("done == null").unwrap();
-        let created = QueryPlan::compile("created == '2026-06-18T09:00:00+08:00'").unwrap();
+        let created =
+            QueryPlan::compile("created == timestamp('2026-06-18T09:00:00+08:00')").unwrap();
         let done = QueryPlan::compile("done != null && title.matches('Done')").unwrap();
         let canceled = QueryPlan::compile("canceled != null && title.matches('Canceled')").unwrap();
         let recurring = QueryPlan::compile(
-            "due == '2026-06-20T09:00:00+08:00' && recur == 'P1W' && prev == '#previous-task'",
+            "due == timestamp('2026-06-20T09:00:00+08:00') && wait == timestamp('2026-06-19T09:00:00+08:00') && recur == 'P1W' && prev == '#previous-task'",
+        )
+        .unwrap();
+        let actionable = QueryPlan::compile_at(
+            "done == null && canceled == null && (wait == null || wait <= now)",
+            DateTime::parse_from_rfc3339("2026-06-19T10:00:00+08:00").unwrap(),
+        )
+        .unwrap();
+        let waiting = QueryPlan::compile_at(
+            "done == null && canceled == null && wait != null && wait > now",
+            DateTime::parse_from_rfc3339("2026-06-18T10:00:00+08:00").unwrap(),
         )
         .unwrap();
         let source = QueryPlan::compile("path == 'tasks.dj' && id == 'open-task'").unwrap();
@@ -896,6 +923,10 @@ mod tests {
         assert!(task_matches(&root, &path, &found[2], Some(&canceled)).unwrap());
         assert!(task_matches(&root, &path, &found[0], Some(&recurring)).unwrap());
         assert!(!task_matches(&root, &path, &found[1], Some(&recurring)).unwrap());
+        assert!(task_matches(&root, &path, &found[0], Some(&actionable)).unwrap());
+        assert!(!task_matches(&root, &path, &found[1], Some(&actionable)).unwrap());
+        assert!(task_matches(&root, &path, &found[0], Some(&waiting)).unwrap());
+        assert!(!task_matches(&root, &path, &found[1], Some(&waiting)).unwrap());
         assert!(task_matches(&root, &path, &found[0], Some(&source)).unwrap());
         assert!(!task_matches(&root, &path, &found[1], Some(&source)).unwrap());
         let open_row = task_output_record(&root, &path, &found[0]);

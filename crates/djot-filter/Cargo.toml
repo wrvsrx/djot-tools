@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 cel.workspace = true
+chrono.workspace = true
 clap.workspace = true
 comfy-table.workspace = true
 djot-core = { path = "../djot-core" }
