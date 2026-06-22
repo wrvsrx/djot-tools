@@ -87,10 +87,21 @@ pub enum RefTarget {
 }
 
 /// Per-document index of anchors (by id) and outgoing references.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DocIndex {
     pub anchors: HashMap<String, Anchor>,
     pub references: Vec<Reference>,
+}
+
+/// Shared per-document analysis used by workspace-level tools.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Analysis {
+    pub index: DocIndex,
+    pub metadata: Option<String>,
+    pub tasks: Vec<Task>,
+    /// Document-local diagnostics. Workspace-dependent diagnostics, such as
+    /// unresolved cross-file references, are added by [`Workspace`].
+    pub diagnostics: Vec<AnalysisDiagnostic>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,15 +291,25 @@ pub fn heading_outline(text: &str) -> Vec<Heading> {
 
 /// Walk the document once, collecting anchors and references.
 pub fn build_index(text: &str) -> DocIndex {
+    analyze(text).index
+}
+
+/// Analyze one document, collecting shared semantic data in one parser pass.
+pub fn analyze(text: &str) -> Analysis {
     let mut anchors: HashMap<String, Anchor> = HashMap::new();
+    let mut seen_anchor_ranges: HashMap<String, Range<usize>> = HashMap::new();
     let mut references = Vec::new();
+    let mut tasks = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut metadata = None;
+    let mut metadata_capture: Option<String> = None;
     let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
-    // Stack of (destination, start byte) for links currently open.
     let mut open_links: Vec<(String, usize)> = Vec::new();
+    let mut task_stack: Vec<TaskFrame> = Vec::new();
+    let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
 
     for (event, span) in Parser::new(text).into_offset_iter() {
         match event {
-            // Headings carry the (possibly auto-generated) id directly.
             Event::Start(Container::Heading { id, .. }, _) => {
                 open_headings.push(HeadingAnchorFrame {
                     id: id.into_owned(),
@@ -297,34 +318,100 @@ pub fn build_index(text: &str) -> DocIndex {
                 });
             }
             Event::Start(container, attrs) => {
-                // Any other element with an explicit id is also an anchor.
                 if let Some(id) = attrs.get_value("id") {
                     let id = id.to_string();
                     let rename_range =
                         anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
-                    anchors.entry(id).or_insert_with(|| Anchor {
-                        range: span.clone(),
-                        rename_range,
-                        explicit: true,
-                    });
+                    insert_anchor(
+                        &mut anchors,
+                        &mut seen_anchor_ranges,
+                        &mut diagnostics,
+                        id,
+                        Anchor {
+                            range: span.clone(),
+                            rename_range,
+                            explicit: true,
+                        },
+                    );
                 }
-                if let Container::Div { class } = &container {
-                    if class == TASK_CLASS {
+
+                match &container {
+                    Container::CodeBlock { .. }
+                        if metadata.is_none()
+                            && metadata_capture.is_none()
+                            && has_class(&attrs, METADATA_CLASS) =>
+                    {
+                        metadata_capture = Some(String::new());
+                    }
+                    Container::ListItem | Container::TaskListItem { .. } => {
+                        list_item_metadata.push(TaskMetadata::from_attributes(text, &span, &attrs));
+                    }
+                    Container::Div { class } if class == TASK_CLASS => {
                         if let Some(reference) = task_prev_reference(text, &span, &attrs) {
                             references.push(reference);
                         }
                         references.extend(task_dependency_references(text, &span, &attrs));
+
+                        let inherited = list_item_metadata.last();
+                        let task_metadata = TaskMetadata::from_attributes_with_fallback(
+                            text, &span, &attrs, inherited,
+                        );
+                        let depth = task_stack.len();
+                        task_stack.push(TaskFrame {
+                            range_start: span.start,
+                            depth,
+                            id: task_metadata.id,
+                            created: task_metadata.created,
+                            done: task_metadata.done,
+                            canceled: task_metadata.canceled,
+                            due: task_metadata.due,
+                            wait: task_metadata.wait,
+                            recur: task_metadata.recur,
+                            prev: task_metadata.prev,
+                            depends: task_metadata.depends,
+                            capturing_title: false,
+                            captured_title: false,
+                            title_range: None,
+                            title: String::new(),
+                        });
                     }
-                }
-                if let Container::Link(dst, _) = container {
-                    open_links.push((dst.into_owned(), span.start));
+                    Container::Link(dst, _) => {
+                        open_links.push((dst.to_string(), span.start));
+                    }
+                    Container::Paragraph => {
+                        if let Some(frame) = task_stack.last_mut() {
+                            if !frame.capturing_title && !frame.captured_title {
+                                frame.capturing_title = true;
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
-            Event::Str(_) => {
+            Event::Str(s) => {
                 if let Some(heading) = open_headings.last_mut() {
                     match &mut heading.text_range {
                         Some(range) => range.end = span.end,
                         None => heading.text_range = Some(span.clone()),
+                    }
+                }
+                if let Some(frame) = task_stack.last_mut() {
+                    if frame.capturing_title {
+                        frame.title.push_str(&s);
+                        match &mut frame.title_range {
+                            Some(range) => range.end = span.end,
+                            None => frame.title_range = Some(span.clone()),
+                        }
+                    }
+                }
+                if let Some(content) = metadata_capture.as_mut() {
+                    content.push_str(&s);
+                }
+            }
+            Event::Softbreak | Event::Hardbreak => {
+                if let Some(frame) = task_stack.last_mut() {
+                    if frame.capturing_title && !frame.title.is_empty() {
+                        frame.title.push(' ');
                     }
                 }
             }
@@ -336,11 +423,17 @@ pub fn build_index(text: &str) -> DocIndex {
                     let rename_range = explicit_range
                         .or(heading.text_range)
                         .unwrap_or_else(|| range.clone());
-                    anchors.entry(heading.id).or_insert_with(|| Anchor {
-                        range,
-                        rename_range,
-                        explicit,
-                    });
+                    insert_anchor(
+                        &mut anchors,
+                        &mut seen_anchor_ranges,
+                        &mut diagnostics,
+                        heading.id,
+                        Anchor {
+                            range,
+                            rename_range,
+                            explicit,
+                        },
+                    );
                 }
             }
             Event::End(Container::Link(_, _)) => {
@@ -358,13 +451,42 @@ pub fn build_index(text: &str) -> DocIndex {
                     });
                 }
             }
+            Event::End(Container::Paragraph) => {
+                if let Some(frame) = task_stack.last_mut() {
+                    if frame.capturing_title {
+                        frame.capturing_title = false;
+                        frame.captured_title = true;
+                    }
+                }
+            }
+            Event::End(Container::Div { class }) if class == TASK_CLASS => {
+                if let Some(frame) = task_stack.pop() {
+                    tasks.push(frame.into_task(span.end));
+                }
+            }
+            Event::End(Container::ListItem | Container::TaskListItem { .. }) => {
+                list_item_metadata.pop();
+            }
+            Event::End(Container::CodeBlock { .. }) => {
+                if let Some(content) = metadata_capture.take() {
+                    metadata = Some(content);
+                }
+            }
             _ => {}
         }
     }
 
-    DocIndex {
-        anchors,
-        references,
+    tasks.sort_by_key(|task| task.range.start);
+    diagnostics.extend(document_local_task_diagnostics(&tasks));
+
+    Analysis {
+        index: DocIndex {
+            anchors,
+            references,
+        },
+        metadata,
+        tasks,
+        diagnostics,
     }
 }
 
@@ -378,103 +500,11 @@ pub fn has_class(attrs: &Attributes, class: &str) -> bool {
 /// Return the raw text of the document's first `{.metadata}`-classed code block,
 /// if any. This is the shared primitive behind metadata hover and export.
 pub fn metadata_block(text: &str) -> Option<String> {
-    let mut content = String::new();
-    let mut in_meta = false;
-    for (event, _) in Parser::new(text).into_offset_iter() {
-        match event {
-            Event::Start(Container::CodeBlock { .. }, attrs)
-                if has_class(&attrs, METADATA_CLASS) =>
-            {
-                in_meta = true;
-            }
-            Event::Str(s) if in_meta => content.push_str(&s),
-            Event::End(Container::CodeBlock { .. }) if in_meta => return Some(content),
-            _ => {}
-        }
-    }
-    None
+    analyze(text).metadata
 }
 
 pub fn tasks(text: &str) -> Vec<Task> {
-    let mut tasks = Vec::new();
-    let mut stack: Vec<TaskFrame> = Vec::new();
-    let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
-
-    for (event, span) in Parser::new(text).into_offset_iter() {
-        match event {
-            Event::Start(Container::ListItem | Container::TaskListItem { .. }, attrs) => {
-                list_item_metadata.push(TaskMetadata::from_attributes(text, &span, &attrs));
-            }
-            Event::Start(Container::Div { class }, attrs) if class == TASK_CLASS => {
-                let inherited = list_item_metadata.last();
-                let metadata =
-                    TaskMetadata::from_attributes_with_fallback(text, &span, &attrs, inherited);
-                let depth = stack.len();
-                stack.push(TaskFrame {
-                    range_start: span.start,
-                    depth,
-                    id: metadata.id,
-                    created: metadata.created,
-                    done: metadata.done,
-                    canceled: metadata.canceled,
-                    due: metadata.due,
-                    wait: metadata.wait,
-                    recur: metadata.recur,
-                    prev: metadata.prev,
-                    depends: metadata.depends,
-                    capturing_title: false,
-                    captured_title: false,
-                    title_range: None,
-                    title: String::new(),
-                });
-            }
-            Event::Start(Container::Paragraph, _) => {
-                if let Some(frame) = stack.last_mut() {
-                    if !frame.capturing_title && !frame.captured_title {
-                        frame.capturing_title = true;
-                    }
-                }
-            }
-            Event::Str(s) => {
-                if let Some(frame) = stack.last_mut() {
-                    if frame.capturing_title {
-                        frame.title.push_str(&s);
-                        match &mut frame.title_range {
-                            Some(range) => range.end = span.end,
-                            None => frame.title_range = Some(span.clone()),
-                        }
-                    }
-                }
-            }
-            Event::Softbreak | Event::Hardbreak => {
-                if let Some(frame) = stack.last_mut() {
-                    if frame.capturing_title && !frame.title.is_empty() {
-                        frame.title.push(' ');
-                    }
-                }
-            }
-            Event::End(Container::Paragraph) => {
-                if let Some(frame) = stack.last_mut() {
-                    if frame.capturing_title {
-                        frame.capturing_title = false;
-                        frame.captured_title = true;
-                    }
-                }
-            }
-            Event::End(Container::Div { class }) if class == TASK_CLASS => {
-                if let Some(frame) = stack.pop() {
-                    tasks.push(frame.into_task(span.end));
-                }
-            }
-            Event::End(Container::ListItem | Container::TaskListItem { .. }) => {
-                list_item_metadata.pop();
-            }
-            _ => {}
-        }
-    }
-
-    tasks.sort_by_key(|task| task.range.start);
-    tasks
+    analyze(text).tasks
 }
 
 /// Classify a link destination string into a [`RefTarget`].
@@ -540,11 +570,11 @@ fn normalize(path: &Path) -> PathBuf {
 }
 
 /// One indexed document: its text (for offset→position conversion at the LSP
-/// boundary) and its parsed [`DocIndex`].
+/// boundary) and its parsed analysis.
 #[derive(Debug)]
 pub struct DocEntry {
     pub text: String,
-    pub index: DocIndex,
+    pub analysis: Analysis,
 }
 
 /// An in-memory index of multiple documents, keyed by normalized path. This is
@@ -562,8 +592,9 @@ impl Workspace {
 
     /// Parse `text` and store it under `path`, replacing any prior entry.
     pub fn insert(&mut self, path: PathBuf, text: String) {
-        let index = build_index(&text);
-        self.docs.insert(normalize(&path), DocEntry { text, index });
+        let analysis = analyze(&text);
+        self.docs
+            .insert(normalize(&path), DocEntry { text, analysis });
     }
 
     pub fn remove(&mut self, path: &Path) {
@@ -588,6 +619,7 @@ impl Workspace {
     /// The reference whose source span covers `offset` in the document at `path`.
     pub fn reference_at(&self, path: &Path, offset: usize) -> Option<&Reference> {
         self.get(path)?
+            .analysis
             .index
             .references
             .iter()
@@ -596,12 +628,13 @@ impl Workspace {
 
     /// The anchor with `id` in the document at `path`.
     pub fn anchor(&self, path: &Path, id: &str) -> Option<&Anchor> {
-        self.get(path)?.index.anchors.get(id)
+        self.get(path)?.analysis.index.anchors.get(id)
     }
 
     /// The anchor whose source span covers `offset` in the document at `path`.
     pub fn anchor_at(&self, path: &Path, offset: usize) -> Option<(&str, &Anchor)> {
         self.get(path)?
+            .analysis
             .index
             .anchors
             .iter()
@@ -616,7 +649,7 @@ impl Workspace {
         let target = normalize(path);
         let mut out = Vec::new();
         for (src, entry) in &self.docs {
-            for reference in &entry.index.references {
+            for reference in &entry.analysis.index.references {
                 if let Some(resolved) = resolve_target(src, &reference.target) {
                     if resolved.path == target && resolved.id.as_deref() == Some(id) {
                         out.push((src.clone(), reference.source.clone()));
@@ -629,9 +662,12 @@ impl Workspace {
 
     pub fn task_by_id(&self, path: &Path, id: &str) -> Option<Task> {
         let entry = self.get(path)?;
-        tasks(&entry.text)
-            .into_iter()
+        entry
+            .analysis
+            .tasks
+            .iter()
             .find(|task| task.id.as_deref() == Some(id))
+            .cloned()
     }
 
     pub fn task_dependencies(&self, path: &Path, task: &Task) -> Vec<ResolvedTaskDependency> {
@@ -670,7 +706,7 @@ impl Workspace {
         };
         let mut blocking = Vec::new();
         for (source_path, entry) in &self.docs {
-            for task in tasks(&entry.text) {
+            for task in &entry.analysis.tasks {
                 let Some(source_id) = &task.id else {
                     continue;
                 };
@@ -745,6 +781,7 @@ impl Workspace {
 
     fn anchor_rename_at(&self, path: &Path, offset: usize) -> Option<(&str, &Anchor)> {
         self.get(path)?
+            .analysis
             .index
             .anchors
             .iter()
@@ -772,7 +809,7 @@ impl Workspace {
         }
 
         for (src, entry) in &self.docs {
-            for reference in &entry.index.references {
+            for reference in &entry.analysis.index.references {
                 let Some(range) = &reference.target_id_range else {
                     continue;
                 };
@@ -834,7 +871,7 @@ impl Workspace {
         let mut edits = Vec::new();
 
         for (src, entry) in &self.docs {
-            for reference in &entry.index.references {
+            for reference in &entry.analysis.index.references {
                 let Some(range) = &reference.target_path_range else {
                     continue;
                 };
@@ -861,10 +898,9 @@ impl Workspace {
             return Vec::new();
         };
 
-        let mut diagnostics = Vec::new();
-        diagnostics.extend(duplicate_anchor_diagnostics(&entry.text));
+        let mut diagnostics = entry.analysis.diagnostics.clone();
 
-        for reference in &entry.index.references {
+        for reference in &entry.analysis.index.references {
             if reference.kind == ReferenceKind::TaskDependency {
                 continue;
             }
@@ -887,7 +923,7 @@ impl Workspace {
             };
 
             if let Some(id) = target.id {
-                let Some(anchor) = target_entry.index.anchors.get(&id) else {
+                let Some(anchor) = target_entry.analysis.index.anchors.get(&id) else {
                     diagnostics.push(AnalysisDiagnostic {
                         range: reference.source.clone(),
                         kind: DiagnosticKind::UnresolvedAnchor { id },
@@ -896,42 +932,13 @@ impl Workspace {
                 };
 
                 if reference.kind == ReferenceKind::TaskPrev
-                    && !anchor_targets_task(&target_entry.text, &anchor.range)
+                    && !anchor_targets_task(&target_entry.analysis.tasks, &anchor.range)
                 {
                     diagnostics.push(AnalysisDiagnostic {
                         range: reference.source.clone(),
                         kind: DiagnosticKind::InvalidTaskPrevTarget { id },
                     });
                 }
-            }
-        }
-
-        for task in tasks(&entry.text) {
-            if task.done.is_some() && task.canceled.is_some() {
-                diagnostics.push(AnalysisDiagnostic {
-                    range: task.range.clone(),
-                    kind: DiagnosticKind::ConflictingTaskClosedState,
-                });
-            }
-
-            let Some(recur) = task.recur.as_deref() else {
-                continue;
-            };
-
-            if parse_repeat_rule(recur).is_none() {
-                diagnostics.push(AnalysisDiagnostic {
-                    range: task.range.clone(),
-                    kind: DiagnosticKind::InvalidTaskRecur {
-                        recur: recur.to_string(),
-                    },
-                });
-            }
-
-            if task.due.is_none() {
-                diagnostics.push(AnalysisDiagnostic {
-                    range: task.range,
-                    kind: DiagnosticKind::MissingTaskDueForRecur,
-                });
             }
         }
 
@@ -949,7 +956,7 @@ impl Workspace {
         let graph = self.task_dependency_graph();
         let mut diagnostics = Vec::new();
 
-        for task in tasks(&entry.text) {
+        for task in &entry.analysis.tasks {
             let task_ref = task.id.as_ref().map(|id| TaskRef {
                 path: path.clone(),
                 id: id.clone(),
@@ -1035,14 +1042,14 @@ impl Workspace {
         let Some(id) = target.id else {
             return None;
         };
-        let Some(anchor) = target_entry.index.anchors.get(&id) else {
+        let Some(anchor) = target_entry.analysis.index.anchors.get(&id) else {
             return Some(AnalysisDiagnostic {
                 range: dependency.range.clone(),
                 kind: DiagnosticKind::UnresolvedAnchor { id },
             });
         };
 
-        if !anchor_targets_task(&target_entry.text, &anchor.range) {
+        if !anchor_targets_task(&target_entry.analysis.tasks, &anchor.range) {
             return Some(AnalysisDiagnostic {
                 range: dependency.range.clone(),
                 kind: DiagnosticKind::InvalidTaskDependencyTarget {
@@ -1057,7 +1064,7 @@ impl Workspace {
     fn task_dependency_graph(&self) -> HashMap<TaskRef, Vec<TaskRef>> {
         let mut graph: HashMap<TaskRef, Vec<TaskRef>> = HashMap::new();
         for (path, entry) in &self.docs {
-            for task in tasks(&entry.text) {
+            for task in &entry.analysis.tasks {
                 let Some(id) = &task.id else {
                     continue;
                 };
@@ -1105,8 +1112,8 @@ fn has_dependency_cycle(graph: &HashMap<TaskRef, Vec<TaskRef>>, start: &TaskRef)
     visit(graph, start, start, &mut seen)
 }
 
-fn anchor_targets_task(text: &str, anchor_range: &Range<usize>) -> bool {
-    tasks(text)
+fn anchor_targets_task(tasks: &[Task], anchor_range: &Range<usize>) -> bool {
+    tasks
         .iter()
         .any(|task| ranges_overlap(anchor_range, &task.range))
 }
@@ -1115,50 +1122,46 @@ fn ranges_overlap(a: &Range<usize>, b: &Range<usize>) -> bool {
     a.start < b.end && b.start < a.end
 }
 
-fn duplicate_anchor_diagnostics(text: &str) -> Vec<AnalysisDiagnostic> {
-    let mut diagnostics = Vec::new();
-    let mut seen: HashMap<String, Range<usize>> = HashMap::new();
-    let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
+fn insert_anchor(
+    anchors: &mut HashMap<String, Anchor>,
+    seen: &mut HashMap<String, Range<usize>>,
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+    id: String,
+    anchor: Anchor,
+) {
+    record_anchor_occurrence(seen, diagnostics, id.clone(), anchor.rename_range.clone());
+    anchors.entry(id).or_insert(anchor);
+}
 
-    for (event, span) in Parser::new(text).into_offset_iter() {
-        match event {
-            Event::Start(Container::Heading { id, .. }, _) => {
-                open_headings.push(HeadingAnchorFrame {
-                    id: id.into_owned(),
-                    start: span.start,
-                    text_range: None,
-                });
-            }
-            Event::Start(_, attrs) => {
-                if let Some(id) = attrs.get_value("id") {
-                    let id = id.to_string();
-                    let range = anchor_id_range(text, &span, &id).unwrap_or(span);
-                    record_anchor_occurrence(&mut seen, &mut diagnostics, id, range);
-                }
-            }
-            Event::Str(_) => {
-                if let Some(heading) = open_headings.last_mut() {
-                    match &mut heading.text_range {
-                        Some(range) => range.end = span.end,
-                        None => heading.text_range = Some(span.clone()),
-                    }
-                }
-            }
-            Event::End(Container::Heading { .. }) => {
-                if let Some(heading) = open_headings.pop() {
-                    let range = heading.start..span.end;
-                    let occurrence_range = anchor_id_range(text, &range, &heading.id)
-                        .or(heading.text_range)
-                        .unwrap_or_else(|| range.clone());
-                    record_anchor_occurrence(
-                        &mut seen,
-                        &mut diagnostics,
-                        heading.id,
-                        occurrence_range,
-                    );
-                }
-            }
-            _ => {}
+fn document_local_task_diagnostics(tasks: &[Task]) -> Vec<AnalysisDiagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for task in tasks {
+        if task.done.is_some() && task.canceled.is_some() {
+            diagnostics.push(AnalysisDiagnostic {
+                range: task.range.clone(),
+                kind: DiagnosticKind::ConflictingTaskClosedState,
+            });
+        }
+
+        let Some(recur) = task.recur.as_deref() else {
+            continue;
+        };
+
+        if parse_repeat_rule(recur).is_none() {
+            diagnostics.push(AnalysisDiagnostic {
+                range: task.range.clone(),
+                kind: DiagnosticKind::InvalidTaskRecur {
+                    recur: recur.to_string(),
+                },
+            });
+        }
+
+        if task.due.is_none() {
+            diagnostics.push(AnalysisDiagnostic {
+                range: task.range.clone(),
+                kind: DiagnosticKind::MissingTaskDueForRecur,
+            });
         }
     }
 
@@ -2013,6 +2016,28 @@ mod tests {
             path: "o.dj".into(),
             id: Some("s".into()),
         }));
+    }
+
+    #[test]
+    fn analysis_collects_shared_document_semantics() {
+        let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# Topic\n\n{#task-a recur=\"P1Q\"}\n::: task\nTask A.\n:::\n\n[topic](#Topic)\n";
+        let analysis = analyze(text);
+
+        assert_eq!(analysis.metadata.as_deref(), Some("title = \"x\"\n"));
+        assert!(analysis.index.anchors.contains_key("Topic"));
+        assert_eq!(analysis.index.references.len(), 1);
+        assert_eq!(analysis.tasks.len(), 1);
+        assert_eq!(analysis.tasks[0].id.as_deref(), Some("task-a"));
+        assert!(analysis.diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::InvalidTaskRecur {
+                    recur: "P1Q".into(),
+                }
+        }));
+        assert!(analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::MissingTaskDueForRecur));
     }
 
     #[test]

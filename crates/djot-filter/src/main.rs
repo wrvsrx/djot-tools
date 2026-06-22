@@ -324,7 +324,7 @@ impl ReverseReferences {
     fn build(workspace: &Workspace) -> Self {
         let mut direct: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new();
         for (source, entry) in workspace.documents() {
-            for reference in &entry.index.references {
+            for reference in &entry.analysis.index.references {
                 let Some(target) = resolve_target(source, &reference.target) else {
                     continue;
                 };

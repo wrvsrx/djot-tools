@@ -84,9 +84,10 @@ Current `djot-filter` usage and query context are documented in
 
 # Analysis and caching
 
-- [ ] Consider a shared `djot-core::Analysis` model that collects anchors,
-  references, metadata, task records, and diagnostics from one document parse,
-  so `djot-ls` and `djot-filter` can reuse the same analysis shape.
+- [x] Add a shared `djot-core::Analysis` model that collects anchors,
+  references, metadata, task records, and document-local diagnostics from one
+  document parse, so `djot-ls` and `djot-filter` can reuse the same analysis
+  shape.
 - [ ] Move shared task editing semantics into `djot-core`, so LSP code actions
   and `djot-filter` task actions use the same source-editing behavior for
   completion, cancellation, reopening, and recurring-task advancement.

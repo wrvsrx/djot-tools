@@ -381,7 +381,7 @@ impl ServerState {
 
         let entry = self.workspace.get(&target.path)?;
         let range = match &target.id {
-            Some(id) => entry.index.anchors.get(id)?.range.clone(),
+            Some(id) => entry.analysis.index.anchors.get(id)?.range.clone(),
             None => 0..0, // a link to the file itself jumps to its top
         };
         Some(Location {
@@ -406,7 +406,7 @@ impl ServerState {
         let mut locations = Vec::new();
         if include_declaration {
             let entry = self.workspace.get(&target_path)?;
-            let anchor = entry.index.anchors.get(&target_id)?;
+            let anchor = entry.analysis.index.anchors.get(&target_id)?;
             locations.push(Location {
                 uri: Url::from_file_path(&target_path).ok()?,
                 range: byte_range_to_lsp(&entry.text, &anchor.range),
@@ -693,7 +693,7 @@ impl ServerState {
         let entry = self.workspace.get(&target.path)?;
         let value = match &target.id {
             Some(id) => {
-                let anchor = entry.index.anchors.get(id)?;
+                let anchor = entry.analysis.index.anchors.get(id)?;
                 anchor_hover_markdown(
                     self.display_path(&target.path),
                     id,
@@ -836,8 +836,10 @@ impl ServerState {
             &CodeActionKind::QUICKFIX,
         ) {
             let timestamp = created_timestamp();
-            let task_is_blocked = tasks(&entry.text)
-                .into_iter()
+            let task_is_blocked = entry
+                .analysis
+                .tasks
+                .iter()
                 .find(|task| {
                     task.done.is_none()
                         && task.canceled.is_none()
@@ -950,6 +952,7 @@ impl ServerState {
                 .to_string()
         });
         let mut anchors: Vec<_> = entry
+            .analysis
             .index
             .anchors
             .keys()
