@@ -184,6 +184,80 @@ fn rename_link_path_renames_file_and_updates_workspace_links() {
 }
 
 #[test]
+fn rename_link_path_handles_spaces_and_nested_relative_links() {
+    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-spaces-test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("nested")).unwrap();
+    std::fs::create_dir_all(dir.join("archive")).unwrap();
+    let index = dir.join("index.dj");
+    let project = dir.join("Project Plan.dj");
+    let nested = dir.join("nested").join("notes.dj");
+    let renamed = dir.join("archive").join("Project Plan.dj");
+    let doc_index = "# Index\n\n[review](Project Plan.dj#review)\n";
+    let doc_nested = "# Nested\n\n[review](../Project Plan.dj#review)\n";
+    std::fs::write(&index, doc_index).unwrap();
+    std::fs::write(&project, "{#review}\nReview\n").unwrap();
+    std::fs::write(&nested, doc_nested).unwrap();
+
+    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
+    let index_uri = Url::from_file_path(&index).unwrap().to_string();
+    let project_uri = Url::from_file_path(&project).unwrap().to_string();
+    let renamed_uri = Url::from_file_path(&renamed).unwrap().to_string();
+    let path_col = doc_index
+        .lines()
+        .nth(2)
+        .unwrap()
+        .find("Project Plan.dj")
+        .unwrap() as i64;
+    let position = json!({"line":2,"character":path_col});
+    let text_document = json!({"uri":index_uri});
+
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "capabilities":{"workspace":{"workspaceEdit":{"documentChanges":true,"resourceOperations":["rename"]}}},
+            "processId":null,
+            "rootUri":root_uri
+        }}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/rename",
+        "params":{"textDocument":text_document,"position":position,"newName":"archive/Project Plan.dj"}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let result = response_result(&responses, 2);
+    let changes = result["documentChanges"]
+        .as_array()
+        .expect("documentChanges is not an array");
+    assert_eq!(changes[0]["kind"], json!("rename"));
+    assert_eq!(changes[0]["oldUri"], json!(project_uri));
+    assert_eq!(changes[0]["newUri"], json!(renamed_uri));
+    assert_eq!(
+        sorted_document_change_edits(result),
+        vec![
+            (
+                "index.dj".to_string(),
+                2,
+                path_col as u64,
+                "archive/Project Plan.dj".to_string()
+            ),
+            (
+                "notes.dj".to_string(),
+                2,
+                doc_nested
+                    .lines()
+                    .nth(2)
+                    .unwrap()
+                    .find("../Project Plan.dj")
+                    .unwrap() as u64,
+                "../archive/Project Plan.dj".to_string(),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn rename_link_path_requires_document_changes_capability() {
     let responses = run_path_rename_with_workspace_edit_capabilities(json!({
         "resourceOperations": ["rename"]

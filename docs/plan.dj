@@ -115,7 +115,7 @@ Current `djot-filter` usage and query context are documented in
 
 # Testing
 
-- [ ] Add larger workspace fixtures for cross-file semantic regressions:
+- [x] Add larger workspace fixtures for cross-file semantic regressions:
 
   - nested directories and paths with spaces / percent-encoding
   - duplicate anchors

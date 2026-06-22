@@ -2607,6 +2607,146 @@ mod tests {
     }
 
     #[test]
+    fn larger_workspace_fixture_covers_paths_duplicates_cycles_and_rename_edits() {
+        let root = PathBuf::from("/notes");
+        let index = root.join("index.dj");
+        let project = root.join("Project Plan.dj");
+        let nested = root.join("nested/Work File.dj");
+        let renamed = root.join("archive/Project Plan.dj");
+        let index_text = "# Index\n\n[review](Project Plan.dj#review) [topic](nested/Work File.dj#topic)\n\n{#publish depends=\"Project%20Plan.dj#review\"}\n::: task\nPublish.\n:::\n";
+        let project_text = "{#review depends=\"nested/Work%20File.dj#draft\"}\n::: task\nReview.\n:::\n\n{id=\"review\"}\nDuplicate review anchor.\n";
+        let nested_text =
+            "{#topic}\n# Topic\n\n{#draft depends=\"../Project%20Plan.dj#review\"}\n::: task\nDraft.\n:::\n";
+        let mut ws = Workspace::new();
+        ws.insert(index.clone(), index_text.to_string());
+        ws.insert(project.clone(), project_text.to_string());
+        ws.insert(nested.clone(), nested_text.to_string());
+
+        let index_diagnostics = ws.diagnostics_for(&index);
+        assert!(index_diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::TaskBlocked { count: 1 }));
+
+        let project_diagnostics = ws.diagnostics_for(&project);
+        assert!(project_diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::DuplicateAnchor {
+                    id: "review".to_string(),
+                    first_range: 2..8,
+                }
+        }));
+        assert!(project_diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::TaskDependencyCycle {
+                    id: "review".to_string(),
+                }
+        }));
+
+        let nested_diagnostics = ws.diagnostics_for(&nested);
+        assert!(nested_diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::TaskDependencyCycle {
+                    id: "draft".to_string(),
+                }
+        }));
+
+        let publish = ws.task_by_id(&index, "publish").unwrap();
+        assert_eq!(
+            ws.open_task_dependencies(&index, &publish)
+                .into_iter()
+                .map(|dependency| dependency.target)
+                .collect::<Vec<_>>(),
+            vec![TaskRef {
+                path: project.clone(),
+                id: "review".to_string(),
+            }]
+        );
+
+        let mut anchor_edits = ws
+            .anchor_rename_edits(&project, "review", "review-done")
+            .into_iter()
+            .map(|edit| {
+                let text = &ws.get(&edit.path).unwrap().text;
+                (
+                    edit.path,
+                    text[edit.edit.range].to_string(),
+                    edit.edit.new_text,
+                )
+            })
+            .collect::<Vec<_>>();
+        anchor_edits.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        assert_eq!(
+            anchor_edits,
+            vec![
+                (
+                    project.clone(),
+                    "review".to_string(),
+                    "review-done".to_string()
+                ),
+                (
+                    index.clone(),
+                    "review".to_string(),
+                    "review-done".to_string()
+                ),
+                (
+                    index.clone(),
+                    "review".to_string(),
+                    "review-done".to_string()
+                ),
+                (
+                    nested.clone(),
+                    "review".to_string(),
+                    "review-done".to_string()
+                ),
+            ]
+        );
+
+        let plan = ws.path_rename_edit_plan(&project, &renamed);
+        assert_eq!(
+            plan.first(),
+            Some(&WorkspaceEdit::RenameFile(FileRenameEdit {
+                old_path: project.clone(),
+                new_path: renamed.clone(),
+            }))
+        );
+        let mut path_edits = plan
+            .into_iter()
+            .filter_map(|edit| match edit {
+                WorkspaceEdit::Text(edit) => {
+                    let text = &ws.get(&edit.path).unwrap().text;
+                    Some((
+                        edit.path,
+                        text[edit.edit.range].to_string(),
+                        edit.edit.new_text,
+                    ))
+                }
+                WorkspaceEdit::RenameFile(_) => None,
+            })
+            .collect::<Vec<_>>();
+        path_edits.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            path_edits,
+            vec![
+                (
+                    index.clone(),
+                    "Project Plan.dj".to_string(),
+                    "archive/Project Plan.dj".to_string()
+                ),
+                (
+                    index,
+                    "Project%20Plan.dj".to_string(),
+                    "archive/Project Plan.dj".to_string()
+                ),
+                (
+                    nested,
+                    "../Project%20Plan.dj".to_string(),
+                    "../archive/Project Plan.dj".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn workspace_reports_unresolved_references() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
