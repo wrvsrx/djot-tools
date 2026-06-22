@@ -498,6 +498,46 @@ fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
 }
 
 #[test]
+fn code_action_drops_quoted_id_from_next_recurring_task_instance() {
+    let doc = "- {created=\"2026-06-22T22:36:14+08:00\"}\n  {id=\"a-task\"}\n  {recur=\"P1D\"}\n  {due=\"2026-06-22T22:36:39+08:00\"}\n  ::: task\n  task with id\n  :::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction",
+        "params":{
+            "textDocument":{"uri":"file:///tasks.dj"},
+            "range":{"start":{"line":5,"character":4},"end":{"line":5,"character":4}},
+            "context":{"diagnostics":[],"only":["quickfix"]}
+        }}),
+        json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let actions = responses
+        .iter()
+        .find(|m| m["id"] == json!(2))
+        .expect("no codeAction response")["result"]
+        .as_array()
+        .expect("result is not an array");
+    assert_eq!(actions.len(), 1);
+
+    let edits = actions[0]["edit"]["changes"]["file:///tasks.dj"]
+        .as_array()
+        .expect("changes is not an array");
+    assert_eq!(edits.len(), 2);
+
+    let next_insert = edits[1]["newText"]
+        .as_str()
+        .expect("newText is not a string");
+    assert!(next_insert.contains("\n- {#task-with-id-2026-06-23}\n"));
+    assert!(next_insert.contains(" prev=\"#a-task\""));
+    assert!(!next_insert.contains("{id=\"a-task\"}"));
+    assert!(next_insert.contains("  ::: task\n  task with id\n  :::\n"));
+}
+
+#[test]
 fn code_action_keeps_indented_recurring_task_block_when_list_item_has_extra_content() {
     let doc = "# Tasks\n\n- {created=\"2026-06-20T09:30:00Z\"}\n  {due=\"2026-06-21T17:00:00+08:00\" recur=\"P1D\"}\n  {#daily-review}\n  ::: task\n  Daily review.\n  :::\n\n  Keep these notes with the original list item.\n";
     let msgs = [

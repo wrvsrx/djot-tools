@@ -1585,7 +1585,7 @@ fn is_recurring_instance_attribute(token: &str) -> bool {
     let key = token.split_once('=').map_or(token, |(key, _)| key);
     matches!(
         key,
-        "created" | "done" | "canceled" | "due" | "wait" | "recur" | "prev"
+        "id" | "created" | "done" | "canceled" | "due" | "wait" | "recur" | "prev"
     )
 }
 
