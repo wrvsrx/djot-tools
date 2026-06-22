@@ -19,7 +19,9 @@ mod diagnostics;
 mod edits;
 
 pub use diagnostics::{AnalysisDiagnostic, DiagnosticKind};
-pub use edits::{apply_text_edits, DocumentTextEdit, FileRenameEdit, TextEdit, WorkspaceEdit};
+pub use edits::{
+    apply_text_edits, DocumentTextEdit, EditError, FileRenameEdit, TextEdit, WorkspaceEdit,
+};
 
 /// The class that marks a leading code block as document metadata. This is a
 /// djot-ls / djot-export convention layered on djot's native attribute syntax,
@@ -161,8 +163,6 @@ pub enum TaskEditError {
     TaskAlreadyDone { id: String },
     TaskCanceled { id: String },
     CannotBuildEdit { id: String },
-    OverlappingEdits,
-    EditRangeOutsideDocument,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -572,7 +572,7 @@ pub fn task_done_edits_by_id(
         .ok_or_else(|| TaskEditError::CannotBuildEdit { id: id.to_string() })
 }
 
-pub fn apply_task_text_edits(text: String, edits: Vec<TextEdit>) -> Result<String, TaskEditError> {
+pub fn apply_task_text_edits(text: String, edits: Vec<TextEdit>) -> Result<String, EditError> {
     apply_text_edits(text, edits)
 }
 
