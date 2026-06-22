@@ -84,6 +84,11 @@ Current `djot-filter` usage and query context are documented in
 
 # Analysis and caching
 
+- [x] Keep `djot-core` as the protocol-agnostic, IO-free semantic engine:
+  callers provide document text and paths; core owns parsing, analysis,
+  diagnostics, target resolution inside loaded workspaces, and byte-range edit
+  plans; LSP/CLI/export crates own file I/O, protocols, rendering, external
+  processes, and edit application.
 - [x] Add a shared `djot-core::Analysis` model that collects anchors,
   references, metadata, task records, and document-local diagnostics from one
   document parse, so `djot-ls` and `djot-filter` can reuse the same analysis

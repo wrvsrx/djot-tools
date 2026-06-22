@@ -165,7 +165,8 @@ Implication: **whenever you advertise a capability that causes editors to send a
 
 Four crates in a workspace, split along a deliberate boundary:
 
-- **`djot-core` is protocol-agnostic and works in byte offsets only**.
+- **`djot-core` is protocol-agnostic, does no file I/O, and works in byte
+  offsets only**.
 - **`djot-ls` owns everything LSP** (`lsp_types`, `async-lsp`, UTF-16
   positions).
 - **`djot-export` owns the pandoc JSON AST**.
@@ -173,11 +174,25 @@ Four crates in a workspace, split along a deliberate boundary:
 
 All binaries reuse `djot-core` without pulling in each other's types.
 
-`crates/djot-core/src/lib.rs` (lib, depends on `jotdown` and `serde`):
+`djot-core` is the semantic engine. It owns parsing, document/workspace
+analysis, target resolution inside already-loaded documents, diagnostics, and
+byte-range edit planning. It may normalize paths and compare targets inside an
+in-memory workspace, but it must not read directories, read or write files,
+open editors, speak LSP, render CLI output, or shell out to external tools.
+Callers provide document text and paths, then decide how to apply returned
+edits: `djot-ls` maps byte edits to LSP `TextEdit`s for buffers, while
+`djot-filter` applies byte edits to file contents and writes them back.
+
+`crates/djot-core/src/lib.rs` (lib, depends on `jotdown`, `chrono`, and
+`serde`):
 
 - `heading_outline(text) -> Vec<Heading>` builds a **nested** outline. jotdown wraps each heading in a `Section` container that nests by level, so it walks the section `Start`/`End` events with a stack — the section span is `Heading::range`, the heading line is `selection_range`, nested sections become `children`. A `captured` flag stops headings inside non-section blocks (e.g. a blockquote) from overwriting a section's title.
+- `analyze(text) -> Analysis` collects anchors, references, metadata, task
+  records, and document-local diagnostics from one document parse.
 - `build_index(text) -> DocIndex` collects `anchors` (heading/section ids plus any `{#id}` attribute → byte range) and `references` (every link → byte span + a `RefTarget` classified by `parse_dst`: `Internal #id` / `External path#id` / `Url`). jotdown resolves inline/reference/implicit links all to one destination string, so references are uniform.
 - `metadata_block(text) -> Option<String>` returns the raw toml of a leading `{.metadata}` code block; `has_class` / `METADATA_CLASS` are the shared primitives for that convention (used by the planned metadata hover and `djot-export`).
+- Task edit helpers emit byte-range text edits for status changes and recurring
+  task advancement; they do not apply those edits to disk.
 - `resolve_target(from, target)` normalizes internal and relative cross-file
   targets; URLs deliberately return `None`.
 - `Workspace` stores parsed documents by normalized path, supports active-buffer
