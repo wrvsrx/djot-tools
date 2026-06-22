@@ -15,6 +15,12 @@ use iso8601_duration::Duration as IsoDuration;
 use jotdown::{Attributes, Container, Event, Parser};
 use serde::{Deserialize, Serialize};
 
+mod diagnostics;
+mod edits;
+
+pub use diagnostics::{AnalysisDiagnostic, DiagnosticKind};
+pub use edits::{apply_text_edits, DocumentTextEdit, FileRenameEdit, TextEdit, WorkspaceEdit};
+
 /// The class that marks a leading code block as document metadata. This is a
 /// djot-ls / djot-export convention layered on djot's native attribute syntax,
 /// not part of djot itself — other djot tools simply see a classed code block.
@@ -129,30 +135,6 @@ pub struct TaskDependency {
     pub target: RefTarget,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TextEdit {
-    pub range: Range<usize>,
-    pub new_text: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DocumentTextEdit {
-    pub path: PathBuf,
-    pub edit: TextEdit,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileRenameEdit {
-    pub old_path: PathBuf,
-    pub new_path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorkspaceEdit {
-    Text(DocumentTextEdit),
-    RenameFile(FileRenameEdit),
-}
-
 pub type TaskTextEdit = TextEdit;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,47 +178,6 @@ pub struct ResolvedTaskDependency {
     pub source: String,
     pub target: TaskRef,
     pub task: Task,
-}
-
-/// Protocol-agnostic diagnostics produced by djot analysis.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnalysisDiagnostic {
-    pub range: Range<usize>,
-    pub kind: DiagnosticKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DiagnosticKind {
-    UnresolvedAnchor {
-        id: String,
-    },
-    UnresolvedPath {
-        path: String,
-    },
-    DuplicateAnchor {
-        id: String,
-        first_range: Range<usize>,
-    },
-    MissingTaskDueForRecur,
-    InvalidTaskRecur {
-        recur: String,
-    },
-    ConflictingTaskClosedState,
-    InvalidTaskPrevTarget {
-        id: String,
-    },
-    InvalidTaskDependencyTarget {
-        target: String,
-    },
-    TaskSelfDependency {
-        target: String,
-    },
-    TaskDependencyCycle {
-        id: String,
-    },
-    TaskBlocked {
-        count: usize,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -648,25 +589,6 @@ pub fn task_done_edits_by_id(
 
 pub fn apply_task_text_edits(text: String, edits: Vec<TextEdit>) -> Result<String, TaskEditError> {
     apply_text_edits(text, edits)
-}
-
-pub fn apply_text_edits(
-    mut text: String,
-    mut edits: Vec<TextEdit>,
-) -> Result<String, TaskEditError> {
-    edits.sort_by_key(|edit| edit.range.start);
-    for pair in edits.windows(2) {
-        if pair[0].range.end > pair[1].range.start {
-            return Err(TaskEditError::OverlappingEdits);
-        }
-    }
-    for edit in edits.into_iter().rev() {
-        if edit.range.start > edit.range.end || edit.range.end > text.len() {
-            return Err(TaskEditError::EditRangeOutsideDocument);
-        }
-        text.replace_range(edit.range, &edit.new_text);
-    }
-    Ok(text)
 }
 
 fn task_status_edits_for_task(
