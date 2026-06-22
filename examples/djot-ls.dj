@@ -66,7 +66,7 @@ After applying the action, the result should look like a list item carrying a
   :::
 
 Place the cursor inside this unfinished task div and ask for code actions.
-`djot-ls` should offer "Mark task done" and "Cancel task", inserting a `done`
+`djot-ls` should offer "Complete task" and "Cancel task", inserting a `done`
 or `canceled` timestamp before the opening task fence.
 
 ::: task
@@ -74,7 +74,7 @@ Complete this task from a code action.
 :::
 
 Place the cursor inside this blocked task div and ask for code actions.
-`djot-ls` should show a blocked-task hint and not offer "Mark task done" while
+`djot-ls` should show a blocked-task hint and not offer "Complete task" while
 the dependency remains open. It should still offer "Cancel task".
 
 {#open-dependency}
@@ -88,7 +88,7 @@ This task is blocked by the dependency.
 :::
 
 Place the cursor inside this recurring task div and ask for code actions.
-`djot-ls` should offer "Mark task done" and "Cancel task", inserting `done` or
+`djot-ls` should offer "Complete task" and "Cancel task", inserting `done` or
 `canceled`, adding an id if needed, and appending the next task instance with
 `prev`.
 

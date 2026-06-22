@@ -172,8 +172,8 @@ fn code_action_marks_task_div_done() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
-    assert_eq!(action["title"], json!("Mark task done"));
+    let action = code_action_by_title(actions, "Complete task");
+    assert_eq!(action["title"], json!("Complete task"));
     assert_eq!(action["kind"], json!("quickfix"));
 
     let edit = &action["edit"]["changes"]["file:///tasks.dj"][0];
@@ -215,8 +215,8 @@ fn code_action_marks_list_shaped_task_done() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
-    assert_eq!(action["title"], json!("Mark task done"));
+    let action = code_action_by_title(actions, "Complete task");
+    assert_eq!(action["title"], json!("Complete task"));
 
     let edit = &action["edit"]["changes"]["file:///tasks.dj"][0];
     assert_eq!(
@@ -256,8 +256,8 @@ fn code_action_marks_inline_list_task_done() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
-    assert_eq!(action["title"], json!("Mark task done"));
+    let action = code_action_by_title(actions, "Complete task");
+    assert_eq!(action["title"], json!("Complete task"));
 
     let edit = &action["edit"]["changes"]["file:///tasks.dj"][0];
     assert_eq!(
@@ -456,8 +456,8 @@ fn code_action_marks_recurring_task_done_and_creates_next_instance() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
-    assert_eq!(action["title"], json!("Mark task done"));
+    let action = code_action_by_title(actions, "Complete task");
+    assert_eq!(action["title"], json!("Complete task"));
     assert_eq!(action["kind"], json!("quickfix"));
 
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
@@ -521,7 +521,7 @@ fn code_action_uses_quoted_id_attribute_for_unicode_recurring_task_ids() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
+    let action = code_action_by_title(actions, "Complete task");
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
         .as_array()
         .expect("changes is not an array");
@@ -568,7 +568,7 @@ fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
+    let action = code_action_by_title(actions, "Complete task");
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
         .as_array()
         .expect("changes is not an array");
@@ -629,7 +629,7 @@ fn code_action_drops_quoted_id_from_next_recurring_task_instance() {
         .expect("result is not an array");
     assert_eq!(actions.len(), 2);
 
-    let action = code_action_by_title(actions, "Mark task done");
+    let action = code_action_by_title(actions, "Complete task");
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
         .as_array()
         .expect("changes is not an array");
@@ -668,7 +668,7 @@ fn code_action_keeps_indented_recurring_task_block_when_list_item_has_extra_cont
         .expect("no codeAction response")["result"]
         .as_array()
         .expect("result is not an array");
-    let action = code_action_by_title(actions, "Mark task done");
+    let action = code_action_by_title(actions, "Complete task");
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
         .as_array()
         .expect("changes is not an array");

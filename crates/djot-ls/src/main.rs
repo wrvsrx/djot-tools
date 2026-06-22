@@ -865,7 +865,7 @@ impl ServerState {
                         edits,
                     )]));
                     actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                        title: "Mark task done".to_string(),
+                        title: "Complete task".to_string(),
                         kind: Some(CodeActionKind::QUICKFIX),
                         diagnostics: None,
                         edit: Some(edit),
