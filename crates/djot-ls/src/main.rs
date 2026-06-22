@@ -836,29 +836,45 @@ impl ServerState {
             &CodeActionKind::QUICKFIX,
         ) {
             let timestamp = created_timestamp();
-            if let Some(completion) =
-                recurring_task_completion_edit(&entry.text, offset, &timestamp)
-                    .or_else(|| task_completion_edit(&entry.text, offset, &timestamp))
-            {
-                let edits = completion
-                    .edits
-                    .into_iter()
-                    .map(|edit| {
-                        TextEdit::new(byte_range_to_lsp(&entry.text, &edit.range), edit.new_text)
-                    })
-                    .collect();
-                let edit =
-                    WorkspaceEdit::new(HashMap::from([(params.text_document.uri.clone(), edits)]));
-                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                    title: "Mark task done".to_string(),
-                    kind: Some(CodeActionKind::QUICKFIX),
-                    diagnostics: None,
-                    edit: Some(edit),
-                    command: None,
-                    is_preferred: Some(true),
-                    disabled: None,
-                    data: None,
-                }));
+            let task_is_blocked = tasks(&entry.text)
+                .into_iter()
+                .find(|task| {
+                    task.done.is_none()
+                        && task.canceled.is_none()
+                        && task.range.start <= offset
+                        && offset <= task.range.end
+                })
+                .is_some_and(|task| self.workspace.is_task_blocked(&path, &task));
+            if !task_is_blocked {
+                if let Some(completion) =
+                    recurring_task_completion_edit(&entry.text, offset, &timestamp)
+                        .or_else(|| task_completion_edit(&entry.text, offset, &timestamp))
+                {
+                    let edits = completion
+                        .edits
+                        .into_iter()
+                        .map(|edit| {
+                            TextEdit::new(
+                                byte_range_to_lsp(&entry.text, &edit.range),
+                                edit.new_text,
+                            )
+                        })
+                        .collect();
+                    let edit = WorkspaceEdit::new(HashMap::from([(
+                        params.text_document.uri.clone(),
+                        edits,
+                    )]));
+                    actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                        title: "Mark task done".to_string(),
+                        kind: Some(CodeActionKind::QUICKFIX),
+                        diagnostics: None,
+                        edit: Some(edit),
+                        command: None,
+                        is_preferred: Some(true),
+                        disabled: None,
+                        data: None,
+                    }));
+                }
             }
         }
 
@@ -1882,14 +1898,18 @@ fn rename_target_outside_workspace_error() -> ResponseError {
 }
 
 fn to_lsp_diagnostic(text: &str, uri: &Url, diagnostic: AnalysisDiagnostic) -> Diagnostic {
-    let (code, message, related_information) = match diagnostic.kind {
-        DiagnosticKind::UnresolvedAnchor { id } => {
-            ("unresolved-anchor", format!("Unresolved anchor `{}`", id), None)
-        }
+    let (code, message, related_information, severity) = match diagnostic.kind {
+        DiagnosticKind::UnresolvedAnchor { id } => (
+            "unresolved-anchor",
+            format!("Unresolved anchor `{}`", id),
+            None,
+            DiagnosticSeverity::WARNING,
+        ),
         DiagnosticKind::UnresolvedPath { path } => (
             "unresolved-path",
             format!("Unresolved Djot path `{}`", path),
             None,
+            DiagnosticSeverity::WARNING,
         ),
         DiagnosticKind::DuplicateAnchor { id, first_range } => (
             "duplicate-anchor",
@@ -1898,11 +1918,13 @@ fn to_lsp_diagnostic(text: &str, uri: &Url, diagnostic: AnalysisDiagnostic) -> D
                 location: Location::new(uri.clone(), byte_range_to_lsp(text, &first_range)),
                 message: "First definition is here.".to_string(),
             }]),
+            DiagnosticSeverity::WARNING,
         ),
         DiagnosticKind::MissingTaskDueForRecur => (
             "missing-task-due-for-recur",
             "Recurring tasks with `recur` need a valid RFC 3339 `due` datetime.".to_string(),
             None,
+            DiagnosticSeverity::WARNING,
         ),
         DiagnosticKind::InvalidTaskRecur { recur } => (
             "invalid-task-recur",
@@ -1911,22 +1933,52 @@ fn to_lsp_diagnostic(text: &str, uri: &Url, diagnostic: AnalysisDiagnostic) -> D
                 recur
             ),
             None,
+            DiagnosticSeverity::WARNING,
         ),
         DiagnosticKind::ConflictingTaskClosedState => (
             "conflicting-task-closed-state",
             "Task cannot have both `done` and `canceled`.".to_string(),
             None,
+            DiagnosticSeverity::WARNING,
         ),
         DiagnosticKind::InvalidTaskPrevTarget { id } => (
             "invalid-task-prev-target",
             format!("Task `prev` target `{}` must be a task.", id),
             None,
+            DiagnosticSeverity::WARNING,
+        ),
+        DiagnosticKind::InvalidTaskDependencyTarget { target } => (
+            "invalid-task-dependency-target",
+            format!("Task dependency target `{}` must be a task.", target),
+            None,
+            DiagnosticSeverity::WARNING,
+        ),
+        DiagnosticKind::TaskSelfDependency { target } => (
+            "task-self-dependency",
+            format!("Task cannot depend on itself via `{}`.", target),
+            None,
+            DiagnosticSeverity::WARNING,
+        ),
+        DiagnosticKind::TaskDependencyCycle { id } => (
+            "task-dependency-cycle",
+            format!("Task dependency cycle includes `{}`.", id),
+            None,
+            DiagnosticSeverity::WARNING,
+        ),
+        DiagnosticKind::TaskBlocked { count } => (
+            "task-blocked",
+            match count {
+                1 => "Blocked by 1 open dependency.".to_string(),
+                _ => format!("Blocked by {count} open dependencies."),
+            },
+            None,
+            DiagnosticSeverity::HINT,
         ),
     };
 
     Diagnostic {
         range: byte_range_to_lsp(text, &diagnostic.range),
-        severity: Some(DiagnosticSeverity::WARNING),
+        severity: Some(severity),
         code: Some(NumberOrString::String(code.to_string())),
         code_description: None,
         source: Some("djot-ls".to_string()),

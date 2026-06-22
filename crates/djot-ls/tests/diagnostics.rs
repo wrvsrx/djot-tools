@@ -132,6 +132,29 @@ fn diagnostics_report_unresolved_task_prev_anchor() {
 }
 
 #[test]
+fn diagnostics_report_blocked_task_as_hint() {
+    let doc =
+        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"draft\"}\n::: task\nReview.\n:::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let diagnostics = last_diagnostics(&responses);
+    let blocked = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == json!("task-blocked"))
+        .expect("missing blocked diagnostic");
+
+    assert_eq!(blocked["severity"], json!(4));
+    assert_eq!(blocked["message"], json!("Blocked by 1 open dependency."));
+}
+
+#[test]
 fn diagnostics_report_task_prev_target_that_is_not_task() {
     let doc = "{#note}\nPlain anchor.\n\n{prev=\"#note\"}\n::: task\nFollow-up task.\n:::\n";
     let msgs = [

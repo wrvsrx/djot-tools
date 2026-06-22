@@ -258,6 +258,34 @@ fn code_action_does_not_mark_canceled_task_done() {
 }
 
 #[test]
+fn code_action_does_not_mark_blocked_task_done() {
+    let doc =
+        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"draft\"}\n::: task\nReview.\n:::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction",
+        "params":{
+            "textDocument":{"uri":"file:///tasks.dj"},
+            "range":{"start":{"line":6,"character":0},"end":{"line":6,"character":0}},
+            "context":{"diagnostics":[],"only":["quickfix"]}
+        }}),
+        json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let actions = responses
+        .iter()
+        .find(|m| m["id"] == json!(2))
+        .expect("no codeAction response")["result"]
+        .as_array()
+        .expect("result is not an array");
+    assert!(actions.is_empty());
+}
+
+#[test]
 fn code_action_marks_recurring_task_done_and_creates_next_instance() {
     let doc = "# Tasks\n\n{due=\"2026-06-21T17:00:00+08:00\" wait=\"2026-06-20T09:00:00+08:00\" recur=\"P1W\"}\n::: task\nWeekly review.\n:::\n";
     let msgs = [
