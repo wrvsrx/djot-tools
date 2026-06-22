@@ -22,7 +22,8 @@ djot-filter note --root examples --query 'title.matches("playground")'
 djot-filter note --root examples --query '"index.dj" in directly_referenced_by'
 djot-filter task --root examples --flat
 djot-filter task --root examples --query 'created != null && done == null'
-djot-filter task --root examples --query 'done == null && canceled == null && (wait == null || wait <= now)'
+djot-filter task --root examples --query 'actionable'
+djot-filter task --root examples --query 'blocked'
 djot-filter task --root examples --query 'done != null'
 djot-filter task --root examples --query 'canceled != null'
 ```

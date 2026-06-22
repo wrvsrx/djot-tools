@@ -189,6 +189,12 @@ Current task fields are intentionally minimal:
 - `prev`: an anchored Djot target such as `#weekly-review-2026-06-21` or
   `archive.dj#weekly-review-2026-06-21` pointing to the previous task instance
   in a repeated chain. The target anchor must identify a task.
+- `depends`: a whitespace-separated list of task references that must be
+  completed or canceled before this task is actionable. Same-file dependencies
+  are written as `#draft-task`; cross-file dependencies use
+  `path.dj#task-id`. Percent-encoded path bytes such as `%20` are decoded when
+  resolving cross-file dependency paths. Bare ids such as `draft-task` are
+  valid only when defining an id attribute, not when referencing a task.
 
 A task with `due` and `recur` is a recurring task instance. When completed
 through tooling, the completed instance keeps its `done` timestamp and a new
@@ -226,7 +232,15 @@ They also include task metadata warnings:
 - a task with a `recur` value outside the currently supported ISO 8601
   duration subset (`PnD`, `PnW`, `PnM`, or `PnY`)
 - a task `prev` target that resolves to an anchor that is not a task
+- a task `depends` target that is unresolved or resolves to an anchor that is
+  not a task
+- a task that depends on itself
+- task dependency cycles
 - a task that has both `done` and `canceled`
+
+Tasks blocked by open dependencies also produce a low-severity hint. Blocked
+tasks are valid document state; the hint exists so editor actions can explain
+why the task is not currently actionable.
 
 Because cross-file diagnostics depend on the workspace, they are only complete
 for documents that have been loaded into the workspace.

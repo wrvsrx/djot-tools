@@ -91,11 +91,13 @@ tasks, and `x` for canceled tasks. Nested task titles are prefixed with ASCII
 markers by default; `--flat` keeps the same table columns but prints raw titles.
 Task output is sorted by root-relative path, then by source order within each
 file. Task queries expose `path`, `id`, `title`, `created`, `due`, `wait`,
-`done`, `canceled`, `recur`, `prev`, and `now`. Datetime-valued task fields and
-`now` are CEL timestamps, so time comparisons work across timezone offsets:
+`done`, `canceled`, `recur`, `prev`, `depends_on`, `directly_blocking`,
+`blocked`, `actionable`, and `now`. Datetime-valued task fields and `now` are
+CEL timestamps, so time comparisons work across timezone offsets:
 
 ``` sh
-djot-filter task --query 'done == null && canceled == null && (wait == null || wait <= now)'
+djot-filter task --query 'actionable'
+djot-filter task --query 'blocked'
 djot-filter task --flat
 ```
 

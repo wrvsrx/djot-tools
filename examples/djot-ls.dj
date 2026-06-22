@@ -73,6 +73,20 @@ the opening task fence.
 Complete this task from a code action.
 :::
 
+Place the cursor inside this blocked task div and ask for code actions.
+`djot-ls` should show a blocked-task hint and not offer "Mark task done" while
+the dependency remains open.
+
+{#open-dependency}
+::: task
+Finish the dependency first.
+:::
+
+{depends="#open-dependency"}
+::: task
+This task is blocked by the dependency.
+:::
+
 Place the cursor inside this recurring task div and ask for code actions.
 `djot-ls` should offer "Mark task done", inserting `done`, adding an id if
 needed, and appending the next task instance with `prev`.

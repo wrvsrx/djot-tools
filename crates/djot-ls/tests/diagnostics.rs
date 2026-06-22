@@ -134,7 +134,7 @@ fn diagnostics_report_unresolved_task_prev_anchor() {
 #[test]
 fn diagnostics_report_blocked_task_as_hint() {
     let doc =
-        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"draft\"}\n::: task\nReview.\n:::\n";
+        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"#draft\"}\n::: task\nReview.\n:::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),

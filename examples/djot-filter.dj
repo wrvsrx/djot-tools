@@ -39,7 +39,8 @@ by the `djot-ls` "Convert to task div" code action.
 djot-filter task --root examples
 djot-filter task --root examples --flat
 djot-filter task --root examples --query 'created != null && done == null'
-djot-filter task --root examples --query 'done == null && canceled == null && (wait == null || wait <= now)'
+djot-filter task --root examples --query 'actionable'
+djot-filter task --root examples --query 'blocked'
 djot-filter task --root examples --query 'done != null'
 djot-filter task --root examples --query 'canceled != null'
 ```
@@ -76,6 +77,13 @@ This completed task should match `done != null`.
 Try the abandoned output shape.
 
 This canceled task should match `canceled != null`.
+:::
+
+{#blocked-by-query depends="#try-task-query"}
+::: task
+Try a blocked task query.
+
+This task should match `blocked` while `try-task-query` remains open.
 :::
 
 # Cross references

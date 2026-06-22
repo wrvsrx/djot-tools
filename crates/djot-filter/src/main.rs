@@ -9,7 +9,7 @@ use cel::{Context, ExecutionError, Program, Value};
 use chrono::{DateTime, FixedOffset, Local};
 use clap::{Args, Parser, Subcommand};
 use comfy_table::{presets::NOTHING, ContentArrangement, Table};
-use djot_core::{metadata_block, resolve_target, tasks, Task, Workspace};
+use djot_core::{metadata_block, resolve_target, tasks, Task, TaskRef, Workspace};
 use skim::prelude::*;
 
 fn main() -> ExitCode {
@@ -154,6 +154,10 @@ struct TaskRecord<'a> {
     wait: Option<&'a str>,
     recur: Option<&'a str>,
     prev: Option<&'a str>,
+    depends_on: Vec<String>,
+    directly_blocking: Vec<String>,
+    blocked: bool,
+    actionable: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -224,6 +228,10 @@ impl QueryPlan {
         context.add_variable_from_value("now", Value::Timestamp(self.now));
         context.add_variable_from_value("recur", record.recur.map(str::to_string));
         context.add_variable_from_value("prev", record.prev.map(str::to_string));
+        context.add_variable_from_value("depends_on", record.depends_on);
+        context.add_variable_from_value("directly_blocking", record.directly_blocking);
+        context.add_variable_from_value("blocked", record.blocked);
+        context.add_variable_from_value("actionable", record.actionable);
 
         match self.program.execute(&context) {
             Ok(Value::Bool(value)) => Ok(value),
@@ -669,7 +677,7 @@ fn print_tasks(
             continue;
         };
         for task in tasks(text) {
-            if task_matches(root, path, &task, plan)? {
+            if task_matches(root, &docs.workspace, path, &task, plan)? {
                 records.push(task_output_record(root, path, &task, tree));
             }
         }
@@ -682,6 +690,7 @@ fn print_tasks(
 
 fn task_matches(
     root: &Path,
+    workspace: &Workspace,
     path: &Path,
     task: &Task,
     plan: Option<&QueryPlan>,
@@ -689,6 +698,24 @@ fn task_matches(
     let Some(plan) = plan else {
         return Ok(true);
     };
+    let depends_on = workspace
+        .task_dependencies(path, task)
+        .into_iter()
+        .map(|dependency| display_task_ref(root, &dependency.target))
+        .collect();
+    let directly_blocking = task
+        .id
+        .as_deref()
+        .map(|id| {
+            workspace
+                .directly_blocking_tasks(path, id)
+                .into_iter()
+                .map(|task_ref| display_task_ref(root, &task_ref))
+                .collect()
+        })
+        .unwrap_or_default();
+    let blocked = workspace.is_task_blocked(path, task);
+    let actionable = task_is_actionable(task, blocked, plan.now);
     plan.matches_task(TaskRecord {
         root,
         path,
@@ -701,7 +728,26 @@ fn task_matches(
         wait: task.wait.as_deref(),
         recur: task.recur.as_deref(),
         prev: task.prev.as_deref(),
+        depends_on,
+        directly_blocking,
+        blocked,
+        actionable,
     })
+}
+
+fn task_is_actionable(task: &Task, blocked: bool, now: DateTime<FixedOffset>) -> bool {
+    task.done.is_none()
+        && task.canceled.is_none()
+        && !blocked
+        && task
+            .wait
+            .as_deref()
+            .and_then(|wait| DateTime::parse_from_rfc3339(wait).ok())
+            .is_none_or(|wait| wait <= now)
+}
+
+fn display_task_ref(root: &Path, task_ref: &TaskRef) -> String {
+    format!("{}#{}", display_path(root, &task_ref.path), task_ref.id)
 }
 
 fn task_output_record(root: &Path, path: &Path, task: &Task, tree: bool) -> TaskOutputRecord {
@@ -956,20 +1002,22 @@ mod tests {
         .unwrap();
         let source = QueryPlan::compile("path == 'tasks.dj' && id == 'open-task'").unwrap();
 
-        assert!(task_matches(&root, &path, &found[0], Some(&open)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&open)).unwrap());
-        assert!(task_matches(&root, &path, &found[0], Some(&created)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&created)).unwrap());
-        assert!(task_matches(&root, &path, &found[1], Some(&done)).unwrap());
-        assert!(task_matches(&root, &path, &found[2], Some(&canceled)).unwrap());
-        assert!(task_matches(&root, &path, &found[0], Some(&recurring)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&recurring)).unwrap());
-        assert!(task_matches(&root, &path, &found[0], Some(&actionable)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&actionable)).unwrap());
-        assert!(task_matches(&root, &path, &found[0], Some(&waiting)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&waiting)).unwrap());
-        assert!(task_matches(&root, &path, &found[0], Some(&source)).unwrap());
-        assert!(!task_matches(&root, &path, &found[1], Some(&source)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&open)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, &found[1], Some(&open)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&created)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, &found[1], Some(&created)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[1], Some(&done)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[2], Some(&canceled)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&recurring)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, &found[1], Some(&recurring)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&actionable)).unwrap());
+        assert!(
+            !task_matches(&root, &docs.workspace, &path, &found[1], Some(&actionable)).unwrap()
+        );
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&waiting)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, &found[1], Some(&waiting)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, &found[0], Some(&source)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, &found[1], Some(&source)).unwrap());
         let open_row = task_output_record(&root, &path, &found[0], false);
         let done_row = task_output_record(&root, &path, &found[1], false);
         let canceled_row = task_output_record(&root, &path, &found[2], false);
@@ -1030,6 +1078,62 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["Parent", "Child", "Grandchild"]
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn task_query_matches_dependency_fields() {
+        let root = unique_test_dir("djot-filter-task-dependency-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("tasks.dj"),
+            "{#draft}\n::: task\nDraft.\n:::\n\n{#done done=\"2026-06-21T09:00:00+08:00\"}\n::: task\nDone.\n:::\n\n{#review depends=\"#draft #done\"}\n::: task\nReview.\n:::\n\n{#waiting wait=\"2026-06-23T09:00:00+08:00\"}\n::: task\nWaiting.\n:::\n",
+        )
+        .unwrap();
+
+        let docs = load_docs(&root).unwrap();
+        let path = normalize(&root.join("tasks.dj"));
+        let text = docs.texts.get(&path).unwrap();
+        let found = tasks(text);
+        let depends_on =
+            QueryPlan::compile("'tasks.dj#draft' in depends_on && 'tasks.dj#done' in depends_on")
+                .unwrap();
+        let directly_blocking =
+            QueryPlan::compile("'tasks.dj#review' in directly_blocking").unwrap();
+        let blocked = QueryPlan::compile("blocked").unwrap();
+        let actionable = QueryPlan::compile_at(
+            "actionable",
+            DateTime::parse_from_rfc3339("2026-06-22T09:00:00+08:00").unwrap(),
+        )
+        .unwrap();
+
+        let draft = found
+            .iter()
+            .find(|task| task.id.as_deref() == Some("draft"))
+            .unwrap();
+        let review = found
+            .iter()
+            .find(|task| task.id.as_deref() == Some("review"))
+            .unwrap();
+        let waiting = found
+            .iter()
+            .find(|task| task.id.as_deref() == Some("waiting"))
+            .unwrap();
+
+        assert!(task_matches(&root, &docs.workspace, &path, review, Some(&depends_on)).unwrap());
+        assert!(task_matches(
+            &root,
+            &docs.workspace,
+            &path,
+            draft,
+            Some(&directly_blocking)
+        )
+        .unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, review, Some(&blocked)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, review, Some(&actionable)).unwrap());
+        assert!(task_matches(&root, &docs.workspace, &path, draft, Some(&actionable)).unwrap());
+        assert!(!task_matches(&root, &docs.workspace, &path, waiting, Some(&actionable)).unwrap());
 
         let _ = std::fs::remove_dir_all(root);
     }

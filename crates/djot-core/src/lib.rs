@@ -956,6 +956,16 @@ impl Workspace {
             });
 
             for dependency in &task.depends {
+                if matches!(dependency.target, RefTarget::Url(_)) {
+                    diagnostics.push(AnalysisDiagnostic {
+                        range: dependency.range.clone(),
+                        kind: DiagnosticKind::InvalidTaskDependencyTarget {
+                            target: dependency.source.clone(),
+                        },
+                    });
+                    continue;
+                }
+
                 if let Some(diagnostic) = self.invalid_task_dependency_diagnostic(&path, dependency)
                 {
                     diagnostics.push(diagnostic);
@@ -1541,9 +1551,7 @@ fn parse_dependency_target(source: &str) -> RefTarget {
             id: Some(id.to_string()),
         }
     } else {
-        RefTarget::Internal {
-            id: source.to_string(),
-        }
+        RefTarget::Url(source.to_string())
     }
 }
 
@@ -2200,7 +2208,7 @@ mod tests {
     #[test]
     fn tasks_extract_dependency_tokens() {
         let text =
-            "{depends=\"draft #review other%20file.dj#publish\"}\n::: task\nBlocked task.\n:::\n";
+            "{depends=\"#draft #review other%20file.dj#publish\"}\n::: task\nBlocked task.\n:::\n";
         let found = tasks(text);
 
         assert_eq!(found.len(), 1);
@@ -2212,7 +2220,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 (
-                    "draft",
+                    "#draft",
                     &RefTarget::Internal {
                         id: "draft".to_string()
                     }
@@ -2238,7 +2246,7 @@ mod tests {
                 .iter()
                 .map(|dependency| text[dependency.range.clone()].to_string())
                 .collect::<Vec<_>>(),
-            vec!["draft", "#review", "other%20file.dj#publish"]
+            vec!["#draft", "#review", "other%20file.dj#publish"]
         );
     }
 
@@ -2580,7 +2588,7 @@ mod tests {
     fn workspace_resolves_task_dependencies_and_blocked_state() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
-        let doc_a = "{#draft}\n::: task\nDraft.\n:::\n\n{#done done=\"2026-06-21T09:00:00Z\"}\n::: task\nDone.\n:::\n\n{#blocked depends=\"draft b.dj#review\"}\n::: task\nBlocked.\n:::\n\n{#ready depends=\"done\"}\n::: task\nReady.\n:::\n";
+        let doc_a = "{#draft}\n::: task\nDraft.\n:::\n\n{#done done=\"2026-06-21T09:00:00Z\"}\n::: task\nDone.\n:::\n\n{#blocked depends=\"#draft b.dj#review\"}\n::: task\nBlocked.\n:::\n\n{#ready depends=\"#done\"}\n::: task\nReady.\n:::\n";
         let doc_b = "{#review}\n::: task\nReview.\n:::\n";
         let mut ws = Workspace::new();
         ws.insert(a.clone(), doc_a.to_string());
@@ -2618,7 +2626,7 @@ mod tests {
     #[test]
     fn workspace_reports_invalid_task_dependencies() {
         let path = PathBuf::from("/notes/tasks.dj");
-        let doc = "{#note}\nNot a task.\n\n{#missing-depends depends=\"missing\"}\n::: task\nMissing.\n:::\n\n{#non-task-depends depends=\"#note\"}\n::: task\nNon task.\n:::\n\n{#self-depends depends=\"self-depends\"}\n::: task\nSelf.\n:::\n";
+        let doc = "{#note}\nNot a task.\n\n{#missing-depends depends=\"#missing\"}\n::: task\nMissing.\n:::\n\n{#bare-depends depends=\"missing\"}\n::: task\nBare.\n:::\n\n{#non-task-depends depends=\"#note\"}\n::: task\nNon task.\n:::\n\n{#self-depends depends=\"#self-depends\"}\n::: task\nSelf.\n:::\n";
         let mut ws = Workspace::new();
         ws.insert(path.clone(), doc.to_string());
 
@@ -2632,13 +2640,19 @@ mod tests {
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.kind
                 == DiagnosticKind::InvalidTaskDependencyTarget {
+                    target: "missing".to_string(),
+                }
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::InvalidTaskDependencyTarget {
                     target: "#note".to_string(),
                 }
         }));
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.kind
                 == DiagnosticKind::TaskSelfDependency {
-                    target: "self-depends".to_string(),
+                    target: "#self-depends".to_string(),
                 }
         }));
     }
@@ -2647,7 +2661,7 @@ mod tests {
     fn workspace_reports_dependency_cycles_and_blocked_tasks() {
         let path = PathBuf::from("/notes/tasks.dj");
         let doc =
-            "{#a depends=\"b\"}\n::: task\nA.\n:::\n\n{#b depends=\"a\"}\n::: task\nB.\n:::\n";
+            "{#a depends=\"#b\"}\n::: task\nA.\n:::\n\n{#b depends=\"#a\"}\n::: task\nB.\n:::\n";
         let mut ws = Workspace::new();
         ws.insert(path.clone(), doc.to_string());
 

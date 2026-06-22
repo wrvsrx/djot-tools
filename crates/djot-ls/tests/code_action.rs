@@ -260,7 +260,7 @@ fn code_action_does_not_mark_canceled_task_done() {
 #[test]
 fn code_action_does_not_mark_blocked_task_done() {
     let doc =
-        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"draft\"}\n::: task\nReview.\n:::\n";
+        "{#draft}\n::: task\nDraft.\n:::\n\n{#review depends=\"#draft\"}\n::: task\nReview.\n:::\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),

@@ -142,23 +142,23 @@ support.
     applying an action to `djot-filter task --query ...` results or selected
     skim items.
 
-- [ ] Add task dependency semantics, separate from subtasks:
+- [x] Add task dependency semantics, separate from subtasks:
 
   - Model dependencies as execution constraints, not document structure.
     Subtasks may affect rendering later, but dependency fields determine whether
     a task is blocked or actionable.
   - Use a Djot/HTML-friendly attribute such as
-    `depends="draft-task other.dj#review"` on task divs or task list items.
+    `depends="#draft-task other.dj#review"` on task divs or task list items.
     The value is a whitespace-separated token list of task references.
-  - Treat same-file tokens as task ids, accepting either `draft-task` or
-    `#draft-task`; treat cross-file tokens as `path.dj#task-id`.
+  - Treat same-file tokens as anchor targets such as `#draft-task`; treat
+    cross-file tokens as `path.dj#task-id`.
   - Reuse the shared task reference spelling, including percent-encoded paths
     for cross-file references whose file names contain spaces.
   - Normalize dependency targets internally to workspace path plus task id, and
     emit diagnostics for unresolved targets, non-task targets, self-dependency,
     and dependency cycles.
-  - Expose query fields such as `depends_on`, `directly_blocking`, `blocked`,
-    and `actionable` once the core dependency graph exists.
+  - Expose query fields `depends_on`, `directly_blocking`, `blocked`, and
+    `actionable`.
 
 - [x] Add lightweight subtask rendering for nested task divs:
 
@@ -172,8 +172,8 @@ support.
   - Keep output sorted by root-relative path, then by source order within each
     file.
   - Keep table columns unchanged; only the title cell changes in tree mode.
-  - Leave richer fields such as `parent`, `children`, `has_open_children`, and
-    dependency-aware `actionable` for a later semantic pass.
+  - Leave richer fields such as `parent`, `children`, and `has_open_children`
+    for a later semantic pass.
 
 # Notes
 
