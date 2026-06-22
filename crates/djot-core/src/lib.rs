@@ -3307,6 +3307,72 @@ mod tests {
     }
 
     #[test]
+    fn workspace_fixture_covers_diagnostics_and_edit_plans() {
+        let index = PathBuf::from("/notes/index.dj");
+        let topic = PathBuf::from("/notes/topic.dj");
+        let renamed = PathBuf::from("/notes/sub/renamed.dj");
+        let index_text = "# Index\n\n[topic](topic.dj#topic) [missing](missing.dj)\n\n{#blocked created=\"2026-06-18T09:00:00Z\" depends=\"#open\"}\n::: task\nBlocked task.\n:::\n\n{#open created=\"2026-06-18T09:00:00Z\"}\n::: task\nOpen task.\n:::\n";
+        let topic_text = "{#topic}\nTopic\n";
+        let mut ws = Workspace::new();
+        ws.insert(index.clone(), index_text.to_string());
+        ws.insert(topic.clone(), topic_text.to_string());
+
+        let diagnostics = ws.diagnostics_for(&index);
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind
+                == DiagnosticKind::UnresolvedPath {
+                    path: "missing.dj".to_string(),
+                }
+        }));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.kind == DiagnosticKind::TaskBlocked { count: 1 } }));
+
+        let mut anchor_edits = ws
+            .anchor_rename_edits(&topic, "topic", "renamed")
+            .into_iter()
+            .map(|edit| {
+                let text = &ws.get(&edit.path).unwrap().text;
+                (
+                    edit.path,
+                    text[edit.edit.range].to_string(),
+                    edit.edit.new_text,
+                )
+            })
+            .collect::<Vec<_>>();
+        anchor_edits.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            anchor_edits,
+            vec![
+                (index.clone(), "topic".to_string(), "renamed".to_string()),
+                (topic.clone(), "topic".to_string(), "renamed".to_string()),
+            ]
+        );
+
+        let plan = ws.path_rename_edit_plan(&topic, &renamed);
+        assert_eq!(
+            plan.first(),
+            Some(&WorkspaceEdit::RenameFile(FileRenameEdit {
+                old_path: topic.clone(),
+                new_path: renamed,
+            }))
+        );
+        assert!(plan.iter().any(|edit| match edit {
+            WorkspaceEdit::Text(edit) => {
+                let text = &ws.get(&edit.path).unwrap().text;
+                edit.path == index
+                    && &text[edit.edit.range.clone()] == "topic.dj"
+                    && edit.edit.new_text == "sub/renamed.dj"
+            }
+            WorkspaceEdit::RenameFile(_) => false,
+        }));
+
+        let edits = task_done_edits_by_id(index_text, "open", "2026-06-19T09:00:00Z").unwrap();
+        let updated = apply_text_edits(index_text.to_string(), edits).unwrap();
+        assert!(updated.contains("{done=\"2026-06-19T09:00:00Z\"}"));
+    }
+
+    #[test]
     fn workspace_reports_unresolved_references() {
         let a = PathBuf::from("/notes/a.dj");
         let b = PathBuf::from("/notes/b.dj");
