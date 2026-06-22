@@ -88,9 +88,9 @@ Current `djot-filter` usage and query context are documented in
   references, metadata, task records, and document-local diagnostics from one
   document parse, so `djot-ls` and `djot-filter` can reuse the same analysis
   shape.
-- [ ] Move shared task editing semantics into `djot-core`, so LSP code actions
-  and `djot-filter` task actions use the same source-editing behavior for
-  completion, cancellation, reopening, and recurring-task advancement.
+- [x] Move current shared task editing semantics into `djot-core`, so LSP code
+  actions and `djot-filter` task actions use the same source-editing behavior
+  for completion, cancellation, and recurring-task advancement.
 - [ ] Split large crate entry points into focused modules as the shared
   analysis model settles:
 

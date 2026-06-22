@@ -518,6 +518,7 @@ dependencies = [
 name = "djot-core"
 version = "0.16.0-dev"
 dependencies = [
+ "chrono",
  "iso8601-duration",
  "jotdown",
  "serde",
