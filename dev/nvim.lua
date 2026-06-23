@@ -16,7 +16,7 @@ vim.lsp.config['djot-ls'] = {
 
 local function set_djot_semantic_highlights()
   vim.api.nvim_set_hl(0, '@lsp.typemod.task.completed.djot', {
-    link = 'DiagnosticDeprecated',
+    link = 'Comment',
     default = true,
   })
 end
