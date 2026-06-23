@@ -77,7 +77,7 @@ capabilities.workspace.didChangeWatchedFiles =
 capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = true
 capabilities.workspace.didChangeWatchedFiles.relativePatternSupport = true
 
-vim.lsp.config('djot-language-server', {
+vim.lsp.config('djot-ls', {
   capabilities = capabilities,
 })
 ```

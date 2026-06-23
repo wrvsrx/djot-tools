@@ -7,11 +7,11 @@ capabilities.workspace.didChangeWatchedFiles =
 capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = true
 capabilities.workspace.didChangeWatchedFiles.relativePatternSupport = true
 
-vim.lsp.config['djot-language-server'] = {
+vim.lsp.config['djot-ls'] = {
   cmd = { './target/debug/djot-ls' },
   filetypes = { 'djot' },
   root_dir = vim.fs.root(0, { '.git' }),
   capabilities = capabilities,
 }
 
-vim.lsp.enable('djot-language-server')
+vim.lsp.enable('djot-ls')

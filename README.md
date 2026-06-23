@@ -1,11 +1,14 @@
-# djot-language-server
+# djot-tools
 
-A [Language Server](https://microsoft.github.io/language-server-protocol/) for
-[Djot](https://djot.net) markup, written in Rust. It parses documents with
-[`jotdown`](https://github.com/hellux/jotdown) and speaks LSP over stdio via
-[`async-lsp`](https://github.com/oxalica/async-lsp).
+A Rust toolkit for [Djot](https://djot.net) markup. It includes a
+[Language Server](https://microsoft.github.io/language-server-protocol/), an
+exporter that produces pandoc JSON, and a directory filter CLI for Djot notes.
+The shared semantic engine parses documents with
+[`jotdown`](https://github.com/hellux/jotdown); the language server speaks LSP
+over stdio via [`async-lsp`](https://github.com/oxalica/async-lsp).
 
-The binary is `djot-ls`. It handles `.dj` / `.djot` files.
+The binaries are `djot-ls`, `djot-export`, and `djot-filter`. They handle
+`.dj` / `.djot` files.
 
 *This README is generated from `README.dj` with this project’s own exporter:*
 `djot-export README.dj | pandoc -f json -t gfm --lua-filter=dev/title-heading.lua --lua-filter=dev/strip-sections.lua > README.md`
@@ -124,11 +127,11 @@ flake). The toolchain is otherwise just a standard Rust + Cargo install.
 A minimal config lives at [`dev/nvim.lua`](dev/nvim.lua):
 
 ``` lua
-vim.lsp.config['djot-language-server'] = {
+vim.lsp.config['djot-ls'] = {
   cmd = { './target/debug/djot-ls' },
   filetypes = { 'djot' },
 }
-vim.lsp.enable('djot-language-server')
+vim.lsp.enable('djot-ls')
 ```
 
 Make sure `.dj`/`.djot` files map to the `djot` filetype and that the `cmd`
@@ -142,7 +145,7 @@ advertises `documentSymbol`, `definition`, and `references` support during
 
 ## Architecture
 
-A Cargo workspace with three crates:
+A Cargo workspace with four crates:
 
 - [`crates/djot-core`](crates/djot-core) – protocol-agnostic djot analysis
   (heading outline, anchor/reference index, metadata-block extraction) working

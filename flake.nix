@@ -1,5 +1,5 @@
 {
-  description = "djot-language-server";
+  description = "djot-tools";
 
   inputs = {
     nur-wrvsrx.url = "github:wrvsrx/nur-packages";
