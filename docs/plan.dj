@@ -159,7 +159,7 @@ Current `djot-filter` usage and query context are documented in
   - recurring task advancement
   - file rename edits and reference updates
 
-- [ ] Consolidate repeated LSP black-box test helpers for temporary workspaces,
+- [x] Consolidate repeated LSP black-box test helpers for temporary workspaces,
   URI construction, request/response lookup, and JSON result extraction, so new
   integration tests stay small and consistent.
 

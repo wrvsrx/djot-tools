@@ -2,23 +2,21 @@
 
 mod support;
 
-use lsp_types::Url;
 use serde_json::{json, Value};
 
-use support::run_session;
+use support::{dir_uri, file_uri, response_result, run_session, temp_dir};
 
 #[test]
 fn hover_shows_link_target_heading() {
-    let dir = std::env::temp_dir().join("djot-ls-hover-heading-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-hover-heading-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [topic](b.dj#Topic)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "# Intro\n\n## Topic\n\nbody\nmore body\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let link_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
@@ -40,16 +38,15 @@ fn hover_shows_link_target_heading() {
 
 #[test]
 fn hover_shows_link_target_file() {
-    let dir = std::env::temp_dir().join("djot-ls-hover-file-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-hover-file-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [file](b.dj)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "\n# Target File\n\nbody\nmore body\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let link_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
@@ -93,10 +90,7 @@ fn hover_shows_explicit_anchor_target() {
 }
 
 fn hover_value(responses: &[Value], id: i64) -> String {
-    responses
-        .iter()
-        .find(|m| m["id"] == json!(id))
-        .unwrap_or_else(|| panic!("no hover response for id {id}"))["result"]["contents"]["value"]
+    response_result(responses, id)["contents"]["value"]
         .as_str()
         .expect("hover value is not a string")
         .to_string()

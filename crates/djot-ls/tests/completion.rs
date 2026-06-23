@@ -2,16 +2,13 @@
 
 mod support;
 
-use lsp_types::Url;
 use serde_json::{json, Value};
 
-use support::run_session;
+use support::{dir_uri, file_uri, response_result, run_session, temp_dir};
 
 #[test]
 fn completion_after_open_bracket_inserts_title_link() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-label-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-label-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[Us";
@@ -22,8 +19,8 @@ fn completion_after_open_bracket_inserts_title_link() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -53,9 +50,7 @@ fn completion_after_open_bracket_inserts_title_link() {
 
 #[test]
 fn completion_replaces_closing_bracket_after_label_cursor() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-label-bracket-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-label-bracket-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[Us]";
@@ -66,8 +61,8 @@ fn completion_replaces_closing_bracket_after_label_cursor() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -96,9 +91,7 @@ fn completion_replaces_closing_bracket_after_label_cursor() {
 
 #[test]
 fn completion_inside_link_destination_inserts_path() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-path-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-path-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read](us";
@@ -109,8 +102,8 @@ fn completion_inside_link_destination_inserts_path() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -137,8 +130,7 @@ fn completion_inside_link_destination_inserts_path() {
 
 #[test]
 fn completion_from_subdirectory_inserts_relative_path() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-relative-path-test");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = temp_dir("djot-ls-completion-relative-path-test");
     std::fs::create_dir_all(dir.join("a")).unwrap();
     std::fs::create_dir_all(dir.join("b")).unwrap();
     let source = dir.join("b").join("b.dj");
@@ -151,8 +143,8 @@ fn completion_from_subdirectory_inserts_relative_path() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let source_uri = Url::from_file_path(&source).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let source_uri = file_uri(&source);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -171,9 +163,7 @@ fn completion_from_subdirectory_inserts_relative_path() {
 
 #[test]
 fn completion_inside_closed_empty_destination_inserts_path() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-closed-empty-path-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-closed-empty-path-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read]()";
@@ -184,8 +174,8 @@ fn completion_inside_closed_empty_destination_inserts_path() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -212,15 +202,13 @@ fn completion_inside_closed_empty_destination_inserts_path() {
 
 #[test]
 fn completion_inside_internal_anchor_inserts_anchor_id() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-internal-anchor-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-internal-anchor-test");
     let a = dir.join("a.dj");
     let doc_a = "# A\n\n[read](#Us\n\n## Usage Guide\n";
     std::fs::write(&a, doc_a).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -247,17 +235,15 @@ fn completion_inside_internal_anchor_inserts_anchor_id() {
 
 #[test]
 fn completion_inside_external_anchor_inserts_anchor_id() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-external-anchor-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-external-anchor-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read](usage.dj#Us";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&usage, "# Intro\n\n## Usage Guide\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -284,15 +270,13 @@ fn completion_inside_external_anchor_inserts_anchor_id() {
 
 #[test]
 fn completion_inside_closed_internal_anchor_inserts_anchor_id() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-closed-internal-anchor-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-closed-internal-anchor-test");
     let a = dir.join("a.dj");
     let doc_a = "# A\n\n[read](#)\n\n## Usage Guide\n";
     std::fs::write(&a, doc_a).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -319,17 +303,15 @@ fn completion_inside_closed_internal_anchor_inserts_anchor_id() {
 
 #[test]
 fn completion_inside_closed_external_anchor_inserts_anchor_id() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-closed-external-anchor-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-closed-external-anchor-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read](usage.dj#)";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&usage, "# Intro\n\n## Usage Guide\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -356,9 +338,7 @@ fn completion_inside_closed_external_anchor_inserts_anchor_id() {
 
 #[test]
 fn completion_does_not_run_inside_inline_code() {
-    let dir = std::env::temp_dir().join("djot-ls-completion-code-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-completion-code-test");
     let a = dir.join("a.dj");
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n`[Us`";
@@ -369,8 +349,8 @@ fn completion_does_not_run_inside_inline_code() {
     )
     .unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -381,18 +361,11 @@ fn completion_does_not_run_inside_inline_code() {
     ];
 
     let responses = run_session(&msgs);
-    let response = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no completion response for id 2");
-    assert!(response["result"].is_null());
+    assert!(response_result(&responses, 2).is_null());
 }
 
 fn completion_item<'a>(responses: &'a [Value], id: i64, label: &str) -> &'a Value {
-    let items = responses
-        .iter()
-        .find(|m| m["id"] == json!(id))
-        .unwrap_or_else(|| panic!("no completion response for id {id}"))["result"]
+    let items = response_result(responses, id)
         .as_array()
         .expect("completion result is not an array");
     items

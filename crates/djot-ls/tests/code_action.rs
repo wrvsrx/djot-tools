@@ -4,7 +4,7 @@ mod support;
 
 use serde_json::{json, Value};
 
-use support::run_session;
+use support::{response_result, run_session};
 
 #[test]
 fn code_action_adds_metadata_at_start() {
@@ -24,12 +24,7 @@ fn code_action_adds_metadata_at_start() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 1);
 
     let action = &actions[0];
@@ -68,12 +63,7 @@ fn code_action_does_not_add_metadata_after_existing_block() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert!(actions.is_empty());
 }
 
@@ -95,12 +85,7 @@ fn code_action_does_not_add_metadata_when_metadata_exists() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert!(actions.is_empty());
 }
 
@@ -122,12 +107,7 @@ fn code_action_converts_native_task_list_item_to_task_div() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 1);
 
     let action = &actions[0];
@@ -164,12 +144,7 @@ fn code_action_marks_task_div_done() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -207,12 +182,7 @@ fn code_action_marks_list_shaped_task_done() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -248,12 +218,7 @@ fn code_action_marks_inline_list_task_done() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -289,12 +254,7 @@ fn code_action_does_not_mark_canceled_task_done() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert!(actions.is_empty());
 }
 
@@ -316,12 +276,7 @@ fn code_action_cancels_task_div() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Cancel task");
@@ -357,12 +312,7 @@ fn code_action_cancels_recurring_task_and_creates_next_instance() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Cancel task");
@@ -420,12 +370,7 @@ fn code_action_cancels_blocked_task_without_mark_done() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0]["title"], json!("Cancel task"));
 }
@@ -448,12 +393,7 @@ fn code_action_marks_recurring_task_done_and_creates_next_instance() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -513,12 +453,7 @@ fn code_action_uses_quoted_id_attribute_for_unicode_recurring_task_ids() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -560,12 +495,7 @@ fn code_action_marks_indented_recurring_task_done_and_creates_next_instance() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -621,12 +551,7 @@ fn code_action_drops_quoted_id_from_next_recurring_task_instance() {
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     assert_eq!(actions.len(), 2);
 
     let action = code_action_by_title(actions, "Complete task");
@@ -662,12 +587,7 @@ fn code_action_keeps_indented_recurring_task_block_when_list_item_has_extra_cont
     ];
 
     let responses = run_session(&msgs);
-    let actions = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no codeAction response")["result"]
-        .as_array()
-        .expect("result is not an array");
+    let actions = code_actions(&responses, 2);
     let action = code_action_by_title(actions, "Complete task");
     let edits = action["edit"]["changes"]["file:///tasks.dj"]
         .as_array()
@@ -713,6 +633,12 @@ fn code_action_by_title<'a>(actions: &'a [Value], title: &str) -> &'a Value {
         .iter()
         .find(|action| action["title"] == json!(title))
         .unwrap_or_else(|| panic!("no code action with title {title:?}"))
+}
+
+fn code_actions(responses: &[Value], id: i64) -> &[Value] {
+    response_result(responses, id)
+        .as_array()
+        .expect("result is not an array")
 }
 
 fn assert_timestamp_shape_with_closing_quote(replacement: &str, prefix: &str) {

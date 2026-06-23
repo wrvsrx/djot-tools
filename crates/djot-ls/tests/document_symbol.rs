@@ -4,7 +4,7 @@ mod support;
 
 use serde_json::{json, Value};
 
-use support::run_session;
+use support::{response_result, run_session};
 
 #[test]
 fn document_symbol_returns_headings() {
@@ -20,10 +20,7 @@ fn document_symbol_returns_headings() {
     ];
 
     let responses = run_session(&msgs);
-    let roots = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no documentSymbol response")["result"]
+    let roots = response_result(&responses, 2)
         .as_array()
         .expect("result is not an array")
         .clone();

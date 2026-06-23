@@ -1,7 +1,27 @@
+#![allow(dead_code)]
+
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use serde_json::Value;
+use serde_json::{json, Value};
+
+pub fn temp_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+pub fn file_uri(path: &Path) -> String {
+    lsp_types::Url::from_file_path(path).unwrap().to_string()
+}
+
+pub fn dir_uri(path: &Path) -> String {
+    lsp_types::Url::from_directory_path(path)
+        .unwrap()
+        .to_string()
+}
 
 /// Wrap a JSON value in an LSP `Content-Length` frame.
 fn frame(v: &Value) -> Vec<u8> {
@@ -75,4 +95,48 @@ pub fn run_session_with_pause(
     child.wait().unwrap();
 
     parse_frames(&out)
+}
+
+pub fn response_result(responses: &[Value], id: i64) -> &Value {
+    &response_for_id(responses, id)["result"]
+}
+
+pub fn response_error_message(responses: &[Value], id: i64) -> &str {
+    response_for_id(responses, id)["error"]["message"]
+        .as_str()
+        .expect("error message is not a string")
+}
+
+pub fn diagnostics_for(responses: &[Value], uri: &str) -> Vec<Vec<Value>> {
+    responses
+        .iter()
+        .filter(|message| {
+            message["method"] == json!("textDocument/publishDiagnostics")
+                && message["params"]["uri"] == json!(uri)
+        })
+        .map(|message| {
+            message["params"]["diagnostics"]
+                .as_array()
+                .expect("diagnostics is not an array")
+                .clone()
+        })
+        .collect()
+}
+
+pub fn last_diagnostics(responses: &[Value]) -> Vec<Value> {
+    responses
+        .iter()
+        .rev()
+        .find(|message| message["method"] == json!("textDocument/publishDiagnostics"))
+        .expect("no publishDiagnostics notification")["params"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics is not an array")
+        .clone()
+}
+
+fn response_for_id(responses: &[Value], id: i64) -> &Value {
+    responses
+        .iter()
+        .find(|message| message["id"] == json!(id))
+        .unwrap_or_else(|| panic!("no response for id {id}"))
 }

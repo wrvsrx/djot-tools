@@ -2,15 +2,16 @@
 
 mod support;
 
-use lsp_types::Url;
 use serde_json::{json, Value};
 
-use support::{run_session, run_session_with_pause};
+use support::{
+    diagnostics_for, dir_uri, file_uri, response_error_message, response_result, run_session,
+    run_session_with_pause, temp_dir,
+};
 
 #[test]
 fn rename_anchor_updates_declaration_and_workspace_references() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-anchor-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-rename-anchor-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [topic](b.dj#topic)\n";
@@ -18,8 +19,8 @@ fn rename_anchor_updates_declaration_and_workspace_references() {
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, doc_b).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let topic_col = (doc_a.lines().nth(2).unwrap().find("#topic").unwrap() + 1) as i64;
     let position = json!({"line":2,"character":topic_col});
     let text_document = json!({"uri":a_uri});
@@ -64,15 +65,13 @@ fn rename_anchor_updates_declaration_and_workspace_references() {
 
 #[test]
 fn rename_reference_updates_declaration_and_all_references() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-reference-all-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-rename-reference-all-test");
     let doc = dir.join("doc.dj");
     let text = "{#xxx}\nAnchor\n\n[first](#xxx)\n\n[second](#xxx)\n";
     std::fs::write(&doc, text).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let doc_uri = Url::from_file_path(&doc).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let doc_uri = file_uri(&doc);
     let id_col = (text.lines().nth(3).unwrap().find("#xxx").unwrap() + 1) as i64;
     let second_id_col = (text.lines().nth(5).unwrap().find("#xxx").unwrap() + 1) as i64;
     let position = json!({"line":3,"character":id_col});
@@ -109,8 +108,7 @@ fn rename_reference_updates_declaration_and_all_references() {
 
 #[test]
 fn rename_link_path_renames_file_and_updates_workspace_links() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-test");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = temp_dir("djot-ls-rename-link-path-test");
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
@@ -122,10 +120,10 @@ fn rename_link_path_renames_file_and_updates_workspace_links() {
     std::fs::write(&b, "{#topic}\nTopic\n").unwrap();
     std::fs::write(&c, doc_c).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
-    let b_uri = Url::from_file_path(&b).unwrap().to_string();
-    let renamed_uri = Url::from_file_path(&renamed).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
+    let b_uri = file_uri(&b);
+    let renamed_uri = file_uri(&renamed);
     let path_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
     let position = json!({"line":2,"character":path_col});
     let text_document = json!({"uri":a_uri});
@@ -185,8 +183,7 @@ fn rename_link_path_renames_file_and_updates_workspace_links() {
 
 #[test]
 fn rename_link_path_handles_spaces_and_nested_relative_links() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-spaces-test");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = temp_dir("djot-ls-rename-link-path-spaces-test");
     std::fs::create_dir_all(dir.join("nested")).unwrap();
     std::fs::create_dir_all(dir.join("archive")).unwrap();
     let index = dir.join("index.dj");
@@ -199,10 +196,10 @@ fn rename_link_path_handles_spaces_and_nested_relative_links() {
     std::fs::write(&project, "{#review}\nReview\n").unwrap();
     std::fs::write(&nested, doc_nested).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let index_uri = Url::from_file_path(&index).unwrap().to_string();
-    let project_uri = Url::from_file_path(&project).unwrap().to_string();
-    let renamed_uri = Url::from_file_path(&renamed).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let index_uri = file_uri(&index);
+    let project_uri = file_uri(&project);
+    let renamed_uri = file_uri(&renamed);
     let path_col = doc_index
         .lines()
         .nth(2)
@@ -284,9 +281,7 @@ fn rename_link_path_requires_rename_resource_operation_capability() {
 
 #[test]
 fn rename_link_path_keeps_diagnostics_clean_after_client_applies_edit() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-diagnostics-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-rename-link-path-diagnostics-test");
     let links = dir.join("links.dj");
     let outline = dir.join("outline.dj");
     let doc_before = "# Links\n\n[Appendix](outline.dj#appendix)\n";
@@ -294,8 +289,8 @@ fn rename_link_path_keeps_diagnostics_clean_after_client_applies_edit() {
     std::fs::write(&links, doc_before).unwrap();
     std::fs::write(&outline, "{#appendix}\n# Appendix\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let links_uri = Url::from_file_path(&links).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let links_uri = file_uri(&links);
     let path_col = doc_before
         .lines()
         .nth(2)
@@ -324,9 +319,7 @@ fn rename_link_path_keeps_diagnostics_clean_after_client_applies_edit() {
 
 #[test]
 fn rename_link_path_file_watch_delete_clears_missing_optimistic_target() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-link-path-watch-delete-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-rename-link-path-watch-delete-test");
     let links = dir.join("links.dj");
     let outline = dir.join("outline.dj");
     let renamed = dir.join("outlinx.dj");
@@ -335,9 +328,9 @@ fn rename_link_path_file_watch_delete_clears_missing_optimistic_target() {
     std::fs::write(&links, doc_before).unwrap();
     std::fs::write(&outline, "{#appendix}\n# Appendix\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let links_uri = Url::from_file_path(&links).unwrap().to_string();
-    let outline_uri = Url::from_file_path(&outline).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let links_uri = file_uri(&links);
+    let outline_uri = file_uri(&outline);
     let path_col = doc_before
         .lines()
         .nth(2)
@@ -384,8 +377,7 @@ fn rename_link_path_file_watch_delete_clears_missing_optimistic_target() {
 
 #[test]
 fn rename_rejects_implicit_heading_anchor() {
-    let dir = std::env::temp_dir().join("djot-ls-rename-implicit-heading-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-rename-implicit-heading-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [topic](b.dj#Topic)\n";
@@ -393,8 +385,8 @@ fn rename_rejects_implicit_heading_anchor() {
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, doc_b).unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let topic_col = doc_a.lines().nth(2).unwrap().find("Topic").unwrap() as i64;
     let position = json!({"line":2,"character":topic_col});
     let text_document = json!({"uri":a_uri});
@@ -421,13 +413,6 @@ fn rename_rejects_implicit_heading_anchor() {
     );
 }
 
-fn response_result(responses: &[Value], id: i64) -> &Value {
-    &responses
-        .iter()
-        .find(|message| message["id"] == json!(id))
-        .unwrap_or_else(|| panic!("no response for id {id}"))["result"]
-}
-
 fn run_path_rename_with_workspace_edit_capabilities(workspace_edit: Value) -> Vec<Value> {
     let suffix = workspace_edit
         .as_object()
@@ -437,21 +422,19 @@ fn run_path_rename_with_workspace_edit_capabilities(workspace_edit: Value) -> Ve
             keys.join("-")
         })
         .unwrap_or_else(|| "none".to_string());
-    let dir = std::env::temp_dir().join(format!(
+    let dir = temp_dir(&format!(
         "djot-ls-rename-link-path-capability-test-{}-{}",
         std::process::id(),
         suffix
     ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [topic](b.dj#topic)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "{#topic}\nTopic\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let path_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
     let position = json!({"line":2,"character":path_col});
     let text_document = json!({"uri":a_uri});
@@ -469,31 +452,6 @@ fn run_path_rename_with_workspace_edit_capabilities(workspace_edit: Value) -> Ve
     ];
 
     run_session(&msgs)
-}
-
-fn response_error_message(responses: &[Value], id: i64) -> &str {
-    responses
-        .iter()
-        .find(|message| message["id"] == json!(id))
-        .unwrap_or_else(|| panic!("no response for id {id}"))["error"]["message"]
-        .as_str()
-        .expect("error message is not a string")
-}
-
-fn diagnostics_for(responses: &[Value], uri: &str) -> Vec<Vec<Value>> {
-    responses
-        .iter()
-        .filter(|message| {
-            message["method"] == json!("textDocument/publishDiagnostics")
-                && message["params"]["uri"] == json!(uri)
-        })
-        .map(|message| {
-            message["params"]["diagnostics"]
-                .as_array()
-                .expect("diagnostics is not an array")
-                .clone()
-        })
-        .collect()
 }
 
 fn sorted_edits(edit: &Value) -> Vec<(String, u64, u64, String)> {

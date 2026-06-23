@@ -2,10 +2,9 @@
 
 mod support;
 
-use lsp_types::Url;
 use serde_json::json;
 
-use support::run_session;
+use support::{dir_uri, file_uri, response_result, run_session, temp_dir};
 
 /// `textDocument/definition` resolves same-document links — both explicit
 /// `#id` links and implicit heading references — to the heading, and returns
@@ -30,13 +29,7 @@ fn definition_resolves_same_document_links() {
     ];
 
     let responses = run_session(&msgs);
-    let result = |id: i64| {
-        responses
-            .iter()
-            .find(|m| m["id"] == json!(id))
-            .unwrap_or_else(|| panic!("no response for id {id}"))["result"]
-            .clone()
-    };
+    let result = |id: i64| response_result(&responses, id).clone();
 
     // Explicit #id link jumps to the heading on line 0.
     assert_eq!(result(10)["range"]["start"]["line"], json!(0));
@@ -51,15 +44,14 @@ fn definition_resolves_same_document_links() {
 /// loading that file from disk on demand.
 #[test]
 fn definition_jumps_across_files() {
-    let dir = std::env::temp_dir().join("djot-ls-xfile-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-xfile-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     std::fs::write(&a, "# A\n\nsee [to B](b.dj#Topic)\n").unwrap();
     std::fs::write(&b, "# Intro\n\ntext\n\n## Topic\n\nbody\n").unwrap();
 
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
-    let b_uri = Url::from_file_path(&b).unwrap().to_string();
+    let a_uri = file_uri(&a);
+    let b_uri = file_uri(&b);
     let doc_a = std::fs::read_to_string(&a).unwrap();
     let link_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
 
@@ -74,11 +66,7 @@ fn definition_jumps_across_files() {
     ];
 
     let responses = run_session(&msgs);
-    let result = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no definition response")["result"]
-        .clone();
+    let result = response_result(&responses, 2).clone();
 
     // Jumps into b.dj, to the "## Topic" heading (line 4).
     assert_eq!(result["uri"], json!(b_uri));
@@ -89,17 +77,16 @@ fn definition_jumps_across_files() {
 /// during initialize, so definition works for workspace files before didOpen.
 #[test]
 fn definition_uses_client_workspace_root_index() {
-    let dir = std::env::temp_dir().join("djot-ls-root-index-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-root-index-test");
     let a = dir.join("a.dj");
     let b = dir.join("nested").join("b.djot");
     std::fs::create_dir_all(b.parent().unwrap()).unwrap();
     std::fs::write(&a, "# A\n\nsee [to B](nested/b.djot#Topic)\n").unwrap();
     std::fs::write(&b, "# Intro\n\ntext\n\n## Topic\n\nbody\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
-    let b_uri = Url::from_file_path(&b).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
+    let b_uri = file_uri(&b);
     let doc_a = std::fs::read_to_string(&a).unwrap();
     let link_col = doc_a.lines().nth(2).unwrap().find("nested/b.djot").unwrap() as i64;
 
@@ -113,11 +100,7 @@ fn definition_uses_client_workspace_root_index() {
     ];
 
     let responses = run_session(&msgs);
-    let result = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no definition response")["result"]
-        .clone();
+    let result = response_result(&responses, 2).clone();
 
     assert_eq!(result["uri"], json!(b_uri));
     assert_eq!(result["range"]["start"]["line"], json!(4));
@@ -128,15 +111,14 @@ fn definition_uses_client_workspace_root_index() {
 /// read that exact filename from disk and return an encoded file URI.
 #[test]
 fn definition_jumps_to_file_with_space_in_name() {
-    let dir = std::env::temp_dir().join("djot-ls-space-file-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-space-file-test");
     let a = dir.join("a.dj");
     let b = dir.join("other file.jd");
     std::fs::write(&a, "# A\n\nsee [to Topic](other file.jd#Topic)\n").unwrap();
     std::fs::write(&b, "# Intro\n\ntext\n\n## Topic\n\nbody\n").unwrap();
 
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
-    let b_uri = Url::from_file_path(&b).unwrap().to_string();
+    let a_uri = file_uri(&a);
+    let b_uri = file_uri(&b);
     let doc_a = std::fs::read_to_string(&a).unwrap();
     let link_col = doc_a.lines().nth(2).unwrap().find("other file.jd").unwrap() as i64;
 
@@ -150,11 +132,7 @@ fn definition_jumps_to_file_with_space_in_name() {
     ];
 
     let responses = run_session(&msgs);
-    let result = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("no definition response")["result"]
-        .clone();
+    let result = response_result(&responses, 2).clone();
 
     assert_eq!(result["uri"], json!(b_uri));
     assert_eq!(result["range"]["start"]["line"], json!(4));

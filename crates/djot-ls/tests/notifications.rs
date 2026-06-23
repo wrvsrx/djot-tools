@@ -4,7 +4,7 @@ mod support;
 
 use serde_json::json;
 
-use support::{run_session, run_session_with_pause};
+use support::{dir_uri, file_uri, response_result, run_session, run_session_with_pause, temp_dir};
 
 /// Regression: editors send `textDocument/didSave` on save. async-lsp's
 /// omni-trait breaks the main loop on any unhandled notification, so an
@@ -36,13 +36,10 @@ fn did_save_does_not_crash_the_server() {
 
 #[test]
 fn initialized_reports_workspace_index_progress() {
-    let dir = std::env::temp_dir().join("djot-ls-progress-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-progress-test");
     std::fs::write(dir.join("a.dj"), "# A\n").unwrap();
     std::fs::write(dir.join("b.djot"), "# B\n").unwrap();
-    let root_uri = lsp_types::Url::from_directory_path(&dir)
-        .unwrap()
-        .to_string();
+    let root_uri = dir_uri(&dir);
 
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
@@ -63,11 +60,8 @@ fn initialized_reports_workspace_index_progress() {
 
 #[test]
 fn initialized_does_not_register_file_watchers_without_client_capability() {
-    let dir = std::env::temp_dir().join("djot-ls-no-watch-registration-test");
-    std::fs::create_dir_all(&dir).unwrap();
-    let root_uri = lsp_types::Url::from_directory_path(&dir)
-        .unwrap()
-        .to_string();
+    let dir = temp_dir("djot-ls-no-watch-registration-test");
+    let root_uri = dir_uri(&dir);
 
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
@@ -86,11 +80,8 @@ fn initialized_does_not_register_file_watchers_without_client_capability() {
 
 #[test]
 fn initialized_registers_djot_file_watchers_with_client_capability() {
-    let dir = std::env::temp_dir().join("djot-ls-watch-registration-test");
-    std::fs::create_dir_all(&dir).unwrap();
-    let root_uri = lsp_types::Url::from_directory_path(&dir)
-        .unwrap()
-        .to_string();
+    let dir = temp_dir("djot-ls-watch-registration-test");
+    let root_uri = dir_uri(&dir);
 
     let first_msgs = [
         json!({
@@ -138,13 +129,12 @@ fn initialized_registers_djot_file_watchers_with_client_capability() {
 
 #[test]
 fn did_change_watched_files_indexes_created_djot_file() {
-    let dir = std::env::temp_dir().join("djot-ls-watch-index-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-watch-index-test");
     let topic = dir.join("topic.dj");
     std::fs::write(&topic, "# Topic\n\nbody\n").unwrap();
     let index = dir.join("index.dj");
-    let index_uri = lsp_types::Url::from_file_path(&index).unwrap().to_string();
-    let topic_uri = lsp_types::Url::from_file_path(&topic).unwrap().to_string();
+    let index_uri = file_uri(&index);
+    let topic_uri = file_uri(&topic);
     let doc = "# Index\n\n[topic](topic.dj#Topic)\n";
 
     let msgs = [
@@ -158,12 +148,7 @@ fn did_change_watched_files_indexes_created_djot_file() {
     ];
 
     let responses = run_session(&msgs);
-    let definition = responses
-        .iter()
-        .find(|m| m["id"] == json!(2))
-        .expect("missing definition response");
-
-    assert_eq!(definition["result"]["uri"], json!(topic_uri));
+    assert_eq!(response_result(&responses, 2)["uri"], json!(topic_uri));
 
     let _ = std::fs::remove_dir_all(dir);
 }

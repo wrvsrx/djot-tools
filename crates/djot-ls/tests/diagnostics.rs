@@ -2,24 +2,21 @@
 
 mod support;
 
-use lsp_types::Url;
-use serde_json::{json, Value};
+use serde_json::json;
 
-use support::run_session;
+use support::{diagnostics_for, dir_uri, file_uri, last_diagnostics, run_session, temp_dir};
 
 #[test]
 fn diagnostics_report_unresolved_links() {
-    let dir = std::env::temp_dir().join("djot-ls-diagnostics-unresolved-test");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-diagnostics-unresolved-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\n[missing anchor](#Missing) [missing file](missing.dj) [missing cross anchor](b.dj#Nope) [ok](b.dj#Topic) [plain](AGENTS.md) [dir](crates/djot-core) [license](LICENSE) [url](https://example.com)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "# Topic\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -219,25 +216,10 @@ fn diagnostics_refresh_when_target_document_changes() {
     ];
 
     let responses = run_session(&msgs);
-    let a_publish_counts = responses
-        .iter()
-        .filter(|m| {
-            m["method"] == json!("textDocument/publishDiagnostics")
-                && m["params"]["uri"] == json!("file:///a.dj")
-        })
-        .map(|m| m["params"]["diagnostics"].as_array().unwrap().len())
+    let a_publish_counts = diagnostics_for(&responses, "file:///a.dj")
+        .into_iter()
+        .map(|diagnostics| diagnostics.len())
         .collect::<Vec<_>>();
 
     assert_eq!(a_publish_counts, [1, 1, 0]);
-}
-
-fn last_diagnostics(responses: &[Value]) -> Vec<Value> {
-    responses
-        .iter()
-        .rev()
-        .find(|m| m["method"] == json!("textDocument/publishDiagnostics"))
-        .expect("no publishDiagnostics notification")["params"]["diagnostics"]
-        .as_array()
-        .expect("diagnostics is not an array")
-        .clone()
 }

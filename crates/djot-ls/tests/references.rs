@@ -2,22 +2,20 @@
 
 mod support;
 
-use lsp_types::Url;
 use serde_json::{json, Value};
 
-use support::run_session;
+use support::{dir_uri, file_uri, response_result, run_session, temp_dir};
 
 #[test]
 fn references_finds_workspace_links_to_heading() {
-    let dir = std::env::temp_dir().join("djot-ls-references-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-references-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     std::fs::write(&a, "# A\n\nsee [topic](b.dj#Topic)\n").unwrap();
     std::fs::write(&b, "# Intro\n\n[local](#Topic)\n\n## Topic\n\nbody\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let b_uri = Url::from_file_path(&b).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let b_uri = file_uri(&b);
 
     let refs = |id: i64, include_declaration: bool| {
         json!({"jsonrpc":"2.0","id":id,"method":"textDocument/references",
@@ -49,16 +47,15 @@ fn references_finds_workspace_links_to_heading() {
 
 #[test]
 fn references_resolves_from_link_position() {
-    let dir = std::env::temp_dir().join("djot-ls-references-link-test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("djot-ls-references-link-test");
     let a = dir.join("a.dj");
     let b = dir.join("b.dj");
     let doc_a = "# A\n\nsee [topic](b.dj#Topic)\n";
     std::fs::write(&a, doc_a).unwrap();
     std::fs::write(&b, "# Intro\n\n[local](#Topic)\n\n## Topic\n\nbody\n").unwrap();
 
-    let root_uri = Url::from_directory_path(&dir).unwrap().to_string();
-    let a_uri = Url::from_file_path(&a).unwrap().to_string();
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
     let link_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":root_uri}}),
@@ -83,10 +80,7 @@ fn references_resolves_from_link_position() {
 }
 
 fn locations_for(responses: &[Value], id: i64) -> Vec<Value> {
-    responses
-        .iter()
-        .find(|m| m["id"] == json!(id))
-        .unwrap_or_else(|| panic!("no references response for id {id}"))["result"]
+    response_result(responses, id)
         .as_array()
         .expect("references result is not an array")
         .clone()
