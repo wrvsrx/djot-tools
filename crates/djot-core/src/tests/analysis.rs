@@ -46,7 +46,7 @@ fn index_collects_anchors_and_references() {
 
 #[test]
 fn analysis_collects_shared_document_semantics() {
-    let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# Topic\n\n{#task-a recur=\"P1Q\"}\n::: task\nTask A.\n:::\n\n[topic](#Topic)\n";
+    let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# Topic\n\n{#task-a recur=\"P1Q\"}\n::: task\nTask A.\n:::\n\n- [x] Native task.\n\n[topic](#Topic)\n";
     let analysis = analyze(text);
 
     assert_eq!(analysis.metadata.as_deref(), Some("title = \"x\"\n"));
@@ -54,6 +54,9 @@ fn analysis_collects_shared_document_semantics() {
     assert_eq!(analysis.index.references.len(), 1);
     assert_eq!(analysis.tasks.len(), 1);
     assert_eq!(analysis.tasks[0].id.as_deref(), Some("task-a"));
+    assert_eq!(analysis.native_task_list_items.len(), 1);
+    assert_eq!(analysis.native_task_list_items[0].title, "Native task.");
+    assert!(analysis.native_task_list_items[0].checked);
     assert!(analysis.diagnostics.iter().any(|diagnostic| {
         diagnostic.kind
             == DiagnosticKind::InvalidTaskRecur {

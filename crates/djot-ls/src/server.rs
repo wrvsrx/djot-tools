@@ -3,9 +3,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use async_lsp::{ClientSocket, LanguageClient, LanguageServer, ResponseError};
-use djot_core::{
-    heading_outline, resolve_target, PathRenameError, RefTarget, RenameTargetError, Workspace,
-};
+use djot_core::{resolve_target, PathRenameError, RefTarget, RenameTargetError, Workspace};
 use futures::future::BoxFuture;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProviderCapability,
@@ -28,7 +26,7 @@ use crate::lsp_utils::*;
 use crate::path_utils::{is_djot_file, relative_link_path};
 use crate::position::{byte_range_to_lsp, position_to_offset};
 use crate::rename::{anchor_rename_workspace_edit, path_rename_workspace_edit};
-use crate::symbols::{document_title, to_document_symbol};
+use crate::symbols::{document_symbols, document_title};
 
 /// Server state. async-lsp's omni-trait hands us `&mut self` on every request and
 /// notification, so plain owned state needs no locking.
@@ -236,12 +234,9 @@ impl LanguageServer for ServerState {
             .to_file_path()
             .ok()
             .and_then(|path| {
-                self.workspace.get(&path).map(|entry| {
-                    heading_outline(&entry.text)
-                        .iter()
-                        .map(|h| to_document_symbol(&entry.text, h))
-                        .collect::<Vec<_>>()
-                })
+                self.workspace
+                    .get(&path)
+                    .map(|entry| document_symbols(&entry.text))
             });
         Box::pin(async move { Ok(symbols.map(DocumentSymbolResponse::Nested)) })
     }

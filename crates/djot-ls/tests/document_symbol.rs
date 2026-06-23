@@ -56,3 +56,37 @@ fn document_symbol_returns_headings() {
     // The "Second" sibling is a leaf.
     assert!(children(&roots[1]).is_empty());
 }
+
+#[test]
+fn document_symbol_returns_anchors_and_tasks_under_containing_heading() {
+    let doc = "# Project\n\n{#note}\nRemember this.\n\n{#write-parser}\n::: task\nWrite parser.\n:::\n\n- [x] Native follow-up.\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///t.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///t.dj"}}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let roots = response_result(&responses, 2)
+        .as_array()
+        .expect("result is not an array")
+        .clone();
+    let project_children = roots[0]["children"]
+        .as_array()
+        .expect("project children are not an array");
+    let names = project_children
+        .iter()
+        .map(|symbol| symbol["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    let details = project_children
+        .iter()
+        .map(|symbol| symbol["detail"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(roots[0]["name"], json!("Project"));
+    assert_eq!(names, ["#note", "Write parser.", "Native follow-up."]);
+    assert_eq!(details, ["anchor", "task", "task list item done"]);
+}

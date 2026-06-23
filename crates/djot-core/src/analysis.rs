@@ -29,6 +29,14 @@ pub struct Heading {
     pub children: Vec<Heading>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeTaskListItem {
+    pub range: Range<usize>,
+    pub title_range: Option<Range<usize>>,
+    pub title: String,
+    pub checked: bool,
+}
+
 /// A jump target: anything bearing an id — a heading/section, or any block or
 /// inline carrying an explicit `{#id}` attribute.
 ///
@@ -58,6 +66,7 @@ pub struct Analysis {
     pub index: DocIndex,
     pub metadata: Option<String>,
     pub tasks: Vec<Task>,
+    pub native_task_list_items: Vec<NativeTaskListItem>,
     /// Document-local diagnostics. Workspace-dependent diagnostics, such as
     /// unresolved cross-file references, are added by [`Workspace`].
     pub diagnostics: Vec<AnalysisDiagnostic>,
@@ -132,12 +141,14 @@ pub fn analyze(text: &str) -> Analysis {
     let mut seen_anchor_ranges: HashMap<String, Range<usize>> = HashMap::new();
     let mut references = Vec::new();
     let mut tasks = Vec::new();
+    let mut native_task_list_items = Vec::new();
     let mut diagnostics = Vec::new();
     let mut metadata = None;
     let mut metadata_capture: Option<String> = None;
     let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
     let mut open_links: Vec<(String, usize)> = Vec::new();
     let mut task_stack: Vec<TaskFrame> = Vec::new();
+    let mut native_task_stack: Vec<NativeTaskFrame> = Vec::new();
     let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
 
     for (event, span) in Parser::new(text).into_offset_iter() {
@@ -177,6 +188,16 @@ pub fn analyze(text: &str) -> Analysis {
                     }
                     Container::ListItem | Container::TaskListItem { .. } => {
                         list_item_metadata.push(TaskMetadata::from_attributes(text, &span, &attrs));
+                        if let Container::TaskListItem { checked } = &container {
+                            native_task_stack.push(NativeTaskFrame {
+                                range_start: span.start,
+                                checked: *checked,
+                                capturing_title: false,
+                                captured_title: false,
+                                title_range: None,
+                                title: String::new(),
+                            });
+                        }
                     }
                     Container::Div { class } if class == TASK_CLASS => {
                         if let Some(reference) = task_prev_reference(text, &span, &attrs) {
@@ -216,6 +237,11 @@ pub fn analyze(text: &str) -> Analysis {
                                 frame.capturing_title = true;
                             }
                         }
+                        if let Some(frame) = native_task_stack.last_mut() {
+                            if !frame.capturing_title && !frame.captured_title {
+                                frame.capturing_title = true;
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -236,12 +262,26 @@ pub fn analyze(text: &str) -> Analysis {
                         }
                     }
                 }
+                if let Some(frame) = native_task_stack.last_mut() {
+                    if frame.capturing_title {
+                        frame.title.push_str(&s);
+                        match &mut frame.title_range {
+                            Some(range) => range.end = span.end,
+                            None => frame.title_range = Some(span.clone()),
+                        }
+                    }
+                }
                 if let Some(content) = metadata_capture.as_mut() {
                     content.push_str(&s);
                 }
             }
             Event::Softbreak | Event::Hardbreak => {
                 if let Some(frame) = task_stack.last_mut() {
+                    if frame.capturing_title && !frame.title.is_empty() {
+                        frame.title.push(' ');
+                    }
+                }
+                if let Some(frame) = native_task_stack.last_mut() {
                     if frame.capturing_title && !frame.title.is_empty() {
                         frame.title.push(' ');
                     }
@@ -290,6 +330,12 @@ pub fn analyze(text: &str) -> Analysis {
                         frame.captured_title = true;
                     }
                 }
+                if let Some(frame) = native_task_stack.last_mut() {
+                    if frame.capturing_title {
+                        frame.capturing_title = false;
+                        frame.captured_title = true;
+                    }
+                }
             }
             Event::End(Container::Div { class }) if class == TASK_CLASS => {
                 if let Some(frame) = task_stack.pop() {
@@ -297,6 +343,11 @@ pub fn analyze(text: &str) -> Analysis {
                 }
             }
             Event::End(Container::ListItem | Container::TaskListItem { .. }) => {
+                if let Event::End(Container::TaskListItem { .. }) = event {
+                    if let Some(frame) = native_task_stack.pop() {
+                        native_task_list_items.push(frame.into_item(span.end));
+                    }
+                }
                 list_item_metadata.pop();
             }
             Event::End(Container::CodeBlock { .. }) => {
@@ -309,6 +360,7 @@ pub fn analyze(text: &str) -> Analysis {
     }
 
     tasks.sort_by_key(|task| task.range.start);
+    native_task_list_items.sort_by_key(|item| item.range.start);
     diagnostics.extend(document_local_task_diagnostics(&tasks));
 
     Analysis {
@@ -318,6 +370,7 @@ pub fn analyze(text: &str) -> Analysis {
         },
         metadata,
         tasks,
+        native_task_list_items,
         diagnostics,
     }
 }
@@ -735,6 +788,26 @@ struct TaskFrame {
     captured_title: bool,
     title_range: Option<Range<usize>>,
     title: String,
+}
+
+struct NativeTaskFrame {
+    range_start: usize,
+    checked: bool,
+    capturing_title: bool,
+    captured_title: bool,
+    title_range: Option<Range<usize>>,
+    title: String,
+}
+
+impl NativeTaskFrame {
+    fn into_item(self, end: usize) -> NativeTaskListItem {
+        NativeTaskListItem {
+            range: self.range_start..end,
+            title_range: self.title_range,
+            title: self.title,
+            checked: self.checked,
+        }
+    }
 }
 
 #[derive(Clone)]

@@ -16,7 +16,7 @@ mod workspace;
 
 pub use analysis::{
     analyze, build_index, has_class, heading_outline, metadata_block, metadata_insertion_edit,
-    tasks, Analysis, Anchor, DocIndex, Heading,
+    tasks, Analysis, Anchor, DocIndex, Heading, NativeTaskListItem,
 };
 pub use diagnostics::{AnalysisDiagnostic, DiagnosticKind};
 pub use edits::{

@@ -23,9 +23,9 @@ drift.
 - [ ] `textDocument/documentSymbol`
 
   - [x] headings
-  - [ ] explicit anchors
-  - [ ] tasks
-  - [ ] native task list items
+  - [x] explicit anchors
+  - [x] tasks
+  - [x] native task list items
 
 - [x] `textDocument/definition`
 
