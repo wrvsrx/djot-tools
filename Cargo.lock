@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "djot-core"
-version = "0.18.0-dev"
+version = "0.17.1"
 dependencies = [
  "chrono",
  "iso8601-duration",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "djot-export"
-version = "0.18.0-dev"
+version = "0.17.1"
 dependencies = [
  "djot-core",
  "pandoc_types",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "djot-filter"
-version = "0.18.0-dev"
+version = "0.17.1"
 dependencies = [
  "cel",
  "chrono",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "djot-ls"
-version = "0.18.0-dev"
+version = "0.17.1"
 dependencies = [
  "async-lsp",
  "chrono",
