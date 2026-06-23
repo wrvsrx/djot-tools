@@ -129,9 +129,9 @@ Current `djot-filter` usage and query context are documented in
     path/symbol helpers, and byte/UTF-16 position conversion out of `main.rs`.
   - [x] `djot-ls`: split `ServerState` request/notification handlers out of
     `main.rs` once the helper module boundaries settle.
-  - [ ] `djot-core`: split the large root test module into focused test files
+  - [x] `djot-core`: split the large root test module into focused test files
     for analysis, workspace behavior, rename, and task editing.
-  - [ ] `djot-core`: split task model, task edit planning, recurrence, and
+  - [x] `djot-core`: split task model, task edit planning, recurrence, and
     task attribute helpers out of `tasks.rs` if task CLI/editor actions keep
     growing.
 
