@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
+#[cfg(test)]
 use chrono::DateTime;
 use clap::{Args, Parser, Subcommand};
 use djot_core::Workspace;
@@ -12,16 +13,18 @@ mod render;
 #[path = "tasks.rs"]
 mod task_ops;
 
+#[cfg(test)]
 pub(crate) use interactive::{
-    create_file_from_query, editor_command, editor_paths, handle_interactive_action,
-    highlight_djot_preview, run_interactive, FilterItem,
+    create_file_from_query, editor_command, editor_paths, highlight_djot_preview, FilterItem,
 };
+pub(crate) use interactive::{handle_interactive_action, run_interactive};
 pub(crate) use query::{retain_query_matches, QueryPlan};
 pub(crate) use render::print_paths;
+#[cfg(test)]
 pub(crate) use task_ops::{
-    complete_task_target, print_tasks, run_task_action, task_matches, task_output_record,
-    TaskOutputRecord,
+    complete_task_target, task_matches, task_output_record, TaskOutputRecord,
 };
+pub(crate) use task_ops::{print_tasks, run_task_action};
 
 fn main() -> ExitCode {
     let config = Config::parse();
