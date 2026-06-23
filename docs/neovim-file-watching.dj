@@ -1,0 +1,135 @@
+{.metadata}
+``` toml
+title = "neovim file watching"
+```
+
+# Neovim file watching on Linux
+
+This note records the investigation around using Neovim's LSP
+`workspace/didChangeWatchedFiles` support for `djot-ls` workspace re-indexing.
+It is design context, not current user-facing behavior.
+
+# Current Neovim behavior
+
+Neovim has LSP file-watching support for `workspace/didChangeWatchedFiles`, but
+current Neovim releases do not advertise that capability on Linux.
+
+The relevant Neovim client capability is not a boolean. Servers check:
+
+``` lua
+capabilities.workspace.didChangeWatchedFiles.dynamicRegistration
+```
+
+In Neovim `v0.12.3`, the default capability is enabled only on macOS and
+Windows:
+
+``` lua
+didChangeWatchedFiles = {
+  dynamicRegistration = sysname == 'Darwin' or sysname == 'Windows_NT',
+  relativePatternSupport = true,
+}
+```
+
+Neovim's help also documents `workspace/didChangeWatchedFiles` as enabled by
+default except on Linux.
+
+# Why Linux is disabled
+
+The Linux implementation is unreliable because the LSP file-watching model asks
+the client to watch workspace-wide glob patterns, while Linux's native file
+watching primitives do not provide a cheap, reliable recursive watcher.
+
+Important limitations:
+
+- Linux `inotify` watches individual files or directories. Watching a full
+  directory tree requires a watch for each subdirectory, plus extra handling for
+  new directories created later.
+- `inotify` is bounded by system limits such as `max_user_watches`,
+  `max_user_instances`, and `max_queued_events`. If the queue overflows, events
+  are dropped and clients need a recovery scan.
+- libuv's recursive `uv_fs_event` support is available on macOS and Windows,
+  not Linux. Neovim therefore has to choose between an external `inotifywait`
+  backend and a recursive directory-watcher fallback.
+- Large workspaces can create too many watches or too many events. Neovim issue
+  `#23291` reports high CPU when a language server watches a large Rust
+  workspace with many generated files.
+- LSP glob patterns add another failure mode. Neovim converts watcher globs to
+  LPeg patterns; issue `#26520` reports `subcapture nesting too deep` in this
+  path.
+- Servers may register watch roots that do not exist yet. Neovim issue `#28058`
+  covered an ENOENT failure when `gopls` registered a missing `vendor/`
+  directory.
+
+[Neovim issue `#27807`](https://github.com/neovim/neovim/issues/27807) and the
+linked change [`#28690`](https://github.com/neovim/neovim/pull/28690) disabled
+advertising `workspace.didChangeWatchedFiles.dynamicRegistration` on Linux and
+BSD because the available backends were considered too limited.
+
+# Local opt-in
+
+A user can force Neovim to advertise the capability on Linux:
+
+``` lua
+local capabilities = vim.lsp.protocol.make_client_capabilities()
+
+capabilities.workspace.didChangeWatchedFiles =
+  capabilities.workspace.didChangeWatchedFiles or {}
+capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = true
+capabilities.workspace.didChangeWatchedFiles.relativePatternSupport = true
+
+vim.lsp.config('djot-language-server', {
+  capabilities = capabilities,
+})
+```
+
+This only tells the server that the client supports dynamic registration. The
+server must still send `client/registerCapability` for
+`workspace/didChangeWatchedFiles` with concrete watcher globs before Neovim will
+start watching files.
+
+For `djot-ls`, useful watcher globs would be narrow, such as `**/*.dj` and
+`**/*.djot`. Narrow globs reduce the risk compared with general-purpose
+language servers that watch large generated trees, but Linux still has the
+backend limits described above.
+
+Installing `inotifywait` changes Neovim's Linux backend choice. Without it,
+Neovim falls back to recursively watching directories through libuv handles.
+Both paths are best treated as opt-in on Linux.
+
+# Recommendation for djot-ls
+
+Do not make correctness depend on Neovim sending
+`workspace/didChangeWatchedFiles` on Linux.
+
+Prefer this layering:
+
+- Add a `workspace/didChangeWatchedFiles` notification handler in `djot-ls`, so
+  clients that do send file events can trigger targeted re-indexing. This
+  handler is also required if `djot-ls` ever advertises or registers a related
+  capability, because async-lsp's omni-trait default handler can terminate the
+  server for unimplemented standard notifications.
+- Keep opened-buffer updates driven by `didOpen`, `didChange`, `didClose`, and
+  `didSave`; these are reliable in Neovim.
+- For reliable external workspace updates on Linux, consider a server-side
+  watcher in `djot-ls`. The server can watch only `.dj` and `.djot` documents
+  and can choose conservative behavior for large workspaces, queue overflow,
+  deleted files, and targeted re-indexing.
+
+# Upstream references
+
+- [Neovim issue `#27807`](https://github.com/neovim/neovim/issues/27807):
+  Linux `didChangeWatchedFiles` disabled after watcher limits and overflow
+  reports.
+- [Neovim issue `#23291`](https://github.com/neovim/neovim/issues/23291): high
+  CPU with file watching in a large workspace.
+- [Neovim issue `#26520`](https://github.com/neovim/neovim/issues/26520): LPeg
+  glob conversion failure in `_watchfiles.lua`.
+- [Neovim issue `#28058`](https://github.com/neovim/neovim/issues/28058):
+  missing watch root ENOENT handling.
+- [Neovim change `#28690`](https://github.com/neovim/neovim/pull/28690):
+  disable advertising Linux/BSD `didChangeWatchedFiles` dynamic registration.
+- [Linux `inotify(7)`](https://man7.org/linux/man-pages/man7/inotify.7.html):
+  recursive directory watching requires one watch per subdirectory and has
+  queue/watch limits.
+- [libuv `fs_event` documentation](https://docs.libuv.org/en/v1.x/fs_event.html):
+  recursive fs events are supported on macOS and Windows, not Linux.

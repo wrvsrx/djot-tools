@@ -225,4 +225,6 @@ Remaining work:
   `workspace/didChangeWatchedFiles` plus targeted re-indexing. If this
   advertises a new client capability, implement the corresponding
   `LanguageServer` notification handler at the same time so async-lsp's
-  omni-trait default handler cannot terminate the server.
+  omni-trait default handler cannot terminate the server. For Neovim on Linux,
+  see [neovim file watching](neovim-file-watching.dj); reliable external
+  updates should not depend solely on client-side LSP file watching.
