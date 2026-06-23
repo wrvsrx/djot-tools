@@ -113,19 +113,23 @@ root-relative `path.dj#task-id` spelling printed in task output. Recurring tasks
 advance by default: completing a task with `due` and `recur` appends the next
 instance and points its `prev` at the completed task.
 
-# Bundled Codex skill
+# Bundled Codex skills
 
-The repository includes a versioned Codex skill at
-`skills/djot-semantic-notes`. It teaches LLM agents how to create and edit
-Djot notes that follow this release's `djot-tools` semantics, especially task
-attributes, task references, dependencies, and recurring task advancement.
+The repository includes versioned Codex skills under `skills/`:
 
-When installed through Nix, the skill is available under
-`share/djot-tools/skills/djot-semantic-notes` in the package output. Copy or
-symlink that directory into your Codex skills directory, for example:
+- `djot-markup` teaches LLM agents how to write and edit base Djot syntax while
+  avoiding Markdown-only habits.
+- `djot-semantic-notes` teaches LLM agents how to create and edit Djot notes
+  that follow this release's `djot-tools` semantics, especially task
+  attributes, task references, dependencies, and recurring task advancement.
+
+When installed through Nix, the skills are available under
+`share/djot-tools/skills` in the package output. Copy or symlink the desired
+skill directories into your Codex skills directory, for example:
 
 ``` sh
 mkdir -p ~/.codex/skills
+ln -s /path/to/djot-tools/share/djot-tools/skills/djot-markup ~/.codex/skills/djot-markup
 ln -s /path/to/djot-tools/share/djot-tools/skills/djot-semantic-notes ~/.codex/skills/djot-semantic-notes
 ```
 

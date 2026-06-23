@@ -1,0 +1,4 @@
+interface:
+  display_name: "Djot Markup"
+  short_description: "Write and edit Djot markup syntax."
+  default_prompt: "Write or edit .dj and .djot files while preserving Djot syntax."

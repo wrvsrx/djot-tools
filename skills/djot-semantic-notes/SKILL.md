@@ -21,6 +21,7 @@ it. If working inside the `djot-tools` source repository, prefer
 - Do not invent semantics that `djot-tools` does not implement.
 - Keep user text, ordering, indentation style, and non-task attributes unless a
   requested edit requires changing them.
+- For base Djot syntax questions, also use the bundled `djot-markup` skill.
 - When applying task changes, read `references/tasks.md` first.
 
 ## References
