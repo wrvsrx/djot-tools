@@ -1,19 +1,27 @@
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::OpenOptions;
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, ExitCode};
-use std::sync::Arc;
+use std::process::ExitCode;
 
-use cel::{Context, ExecutionError, Program, Value};
-use chrono::{DateTime, FixedOffset, Local, SecondsFormat};
+use chrono::DateTime;
 use clap::{Args, Parser, Subcommand};
-use comfy_table::{presets::NOTHING, ContentArrangement, Table};
-use djot_core::{
-    apply_text_edits, metadata_block, resolve_target, task_done_edits_by_id, tasks, EditError,
-    Task, TaskEditError, TaskRef, Workspace,
+use djot_core::Workspace;
+
+mod interactive;
+mod query;
+mod render;
+#[path = "tasks.rs"]
+mod task_ops;
+
+pub(crate) use interactive::{
+    create_file_from_query, editor_command, editor_paths, handle_interactive_action,
+    highlight_djot_preview, run_interactive, FilterItem,
 };
-use skim::prelude::*;
+pub(crate) use query::{retain_query_matches, QueryPlan};
+pub(crate) use render::print_paths;
+pub(crate) use task_ops::{
+    complete_task_target, print_tasks, run_task_action, task_matches, task_output_record,
+    TaskOutputRecord,
+};
 
 fn main() -> ExitCode {
     let config = Config::parse();
@@ -162,267 +170,12 @@ struct TaskDoneConfig {
     targets: Vec<String>,
 }
 
-struct LoadedDocs {
+pub(crate) struct LoadedDocs {
     workspace: Workspace,
     paths: Vec<PathBuf>,
     texts: HashMap<PathBuf, String>,
 }
-
-struct QueryPlan {
-    program: Program,
-    now: DateTime<FixedOffset>,
-}
-
-struct DocumentRecord<'a> {
-    root: &'a Path,
-    path: &'a Path,
-    text: &'a str,
-    reverse_references: &'a ReverseReferences,
-}
-
-struct TaskRecord<'a> {
-    root: &'a Path,
-    path: &'a Path,
-    id: Option<&'a str>,
-    title: &'a str,
-    created: Option<&'a str>,
-    done: Option<&'a str>,
-    canceled: Option<&'a str>,
-    due: Option<&'a str>,
-    wait: Option<&'a str>,
-    recur: Option<&'a str>,
-    prev: Option<&'a str>,
-    depends_on: Vec<String>,
-    directly_blocking: Vec<String>,
-    blocked: bool,
-    actionable: bool,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct TaskOutputRecord {
-    status: String,
-    title: String,
-    source: String,
-}
-
-impl QueryPlan {
-    fn compile(source: &str) -> Result<Self, String> {
-        Self::compile_at(source, Local::now().fixed_offset())
-    }
-
-    fn compile_at(source: &str, now: DateTime<FixedOffset>) -> Result<Self, String> {
-        let program =
-            Program::compile(source).map_err(|err| format!("invalid CEL query: {err}"))?;
-        Ok(Self { program, now })
-    }
-
-    fn matches(&self, record: DocumentRecord<'_>) -> Result<bool, String> {
-        let mut context = Context::default();
-        context.add_variable_from_value("path", display_path(record.root, record.path));
-        context.add_variable_from_value("title", document_title(record.text).unwrap_or_default());
-        context.add_variable_from_value(
-            "directly_referenced_by",
-            record
-                .reverse_references
-                .direct(record.path)
-                .into_iter()
-                .map(|path| display_path(record.root, &path))
-                .collect::<Vec<_>>(),
-        );
-        context.add_variable_from_value(
-            "transitively_referenced_by",
-            record
-                .reverse_references
-                .transitive(record.path)
-                .into_iter()
-                .map(|path| display_path(record.root, &path))
-                .collect::<Vec<_>>(),
-        );
-
-        match self.program.execute(&context) {
-            Ok(Value::Bool(value)) => Ok(value),
-            Ok(value) => Err(format!(
-                "CEL query must return bool, got {}",
-                value_type_name(&value)
-            )),
-            Err(ExecutionError::NoSuchKey(_)) => Ok(false),
-            Err(err) => Err(format!(
-                "cannot evaluate CEL query for {}: {err}",
-                record.path.display()
-            )),
-        }
-    }
-
-    fn matches_task(&self, record: TaskRecord<'_>) -> Result<bool, String> {
-        let mut context = Context::default();
-        context.add_variable_from_value("path", display_path(record.root, record.path));
-        context.add_variable_from_value("id", record.id.map(str::to_string));
-        context.add_variable_from_value("title", record.title.to_string());
-        context.add_variable_from_value("created", datetime_value(record.created));
-        context.add_variable_from_value("done", datetime_value(record.done));
-        context.add_variable_from_value("canceled", datetime_value(record.canceled));
-        context.add_variable_from_value("due", datetime_value(record.due));
-        context.add_variable_from_value("wait", datetime_value(record.wait));
-        context.add_variable_from_value("now", Value::Timestamp(self.now));
-        context.add_variable_from_value("recur", record.recur.map(str::to_string));
-        context.add_variable_from_value("prev", record.prev.map(str::to_string));
-        context.add_variable_from_value("depends_on", record.depends_on);
-        context.add_variable_from_value("directly_blocking", record.directly_blocking);
-        context.add_variable_from_value("blocked", record.blocked);
-        context.add_variable_from_value("actionable", record.actionable);
-
-        match self.program.execute(&context) {
-            Ok(Value::Bool(value)) => Ok(value),
-            Ok(value) => Err(format!(
-                "CEL query must return bool, got {}",
-                value_type_name(&value)
-            )),
-            Err(ExecutionError::NoSuchKey(_)) => Ok(false),
-            Err(err) => Err(format!(
-                "cannot evaluate CEL query for task in {}: {err}",
-                record.path.display()
-            )),
-        }
-    }
-}
-
-fn retain_query_matches(
-    root: &Path,
-    docs: &LoadedDocs,
-    paths: &mut Vec<PathBuf>,
-    plan: &QueryPlan,
-) -> Result<(), String> {
-    let reverse_references = ReverseReferences::build(&docs.workspace);
-    let mut retained = Vec::new();
-
-    for path in paths.drain(..) {
-        let Some(text) = docs.texts.get(&path) else {
-            continue;
-        };
-        let record = DocumentRecord {
-            root,
-            path: &path,
-            text,
-            reverse_references: &reverse_references,
-        };
-        if plan.matches(record)? {
-            retained.push(path);
-        }
-    }
-
-    *paths = retained;
-    Ok(())
-}
-
-struct ReverseReferences {
-    direct: HashMap<PathBuf, HashSet<PathBuf>>,
-}
-
-impl ReverseReferences {
-    fn build(workspace: &Workspace) -> Self {
-        let mut direct: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new();
-        for (source, entry) in workspace.documents() {
-            for reference in &entry.analysis.index.references {
-                let Some(target) = resolve_target(source, &reference.target) else {
-                    continue;
-                };
-                if workspace.contains(&target.path) {
-                    direct
-                        .entry(target.path)
-                        .or_default()
-                        .insert(source.to_path_buf());
-                }
-            }
-        }
-        Self { direct }
-    }
-
-    fn direct(&self, path: &Path) -> Vec<PathBuf> {
-        sorted_paths(self.direct.get(path).into_iter().flatten().cloned())
-    }
-
-    fn transitive(&self, path: &Path) -> Vec<PathBuf> {
-        let mut out = HashSet::new();
-        let mut queue = VecDeque::new();
-
-        for source in self.direct(path) {
-            queue.push_back(source);
-        }
-
-        while let Some(source) = queue.pop_front() {
-            if source == path || !out.insert(source.clone()) {
-                continue;
-            }
-            for next in self.direct(&source) {
-                queue.push_back(next);
-            }
-        }
-
-        sorted_paths(out)
-    }
-}
-
-fn sorted_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
-    let mut paths = paths.into_iter().collect::<Vec<_>>();
-    paths.sort();
-    paths
-}
-
-enum InteractiveAction {
-    Open(Vec<String>),
-    Create(String),
-}
-
-#[derive(Clone)]
-struct FilterItem {
-    path: String,
-    searchable: String,
-    display: String,
-    preview: String,
-}
-
-impl FilterItem {
-    fn new(path: String, text: String) -> Self {
-        let searchable = format!("{path}\n{text}");
-        let preview = Self::preview_text(&path, &text);
-        let display = ansi_bold(&path);
-        Self {
-            path,
-            searchable,
-            display,
-            preview,
-        }
-    }
-
-    fn preview_text(path: &str, text: &str) -> String {
-        format!(
-            "{}\n{}\n{}",
-            ansi_bold(path),
-            ansi_dim(&"-".repeat(path.len())),
-            highlight_djot_preview(text)
-        )
-    }
-}
-
-impl SkimItem for FilterItem {
-    fn text(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.searchable)
-    }
-
-    fn display<'a>(&'a self, _context: DisplayContext<'a>) -> AnsiString<'a> {
-        AnsiString::parse(&self.display)
-    }
-
-    fn preview(&self, _context: PreviewContext) -> ItemPreview {
-        ItemPreview::AnsiText(self.preview.clone())
-    }
-
-    fn output(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.path)
-    }
-}
-
-fn load_docs(root: &Path) -> Result<LoadedDocs, String> {
+pub(crate) fn load_docs(root: &Path) -> Result<LoadedDocs, String> {
     let mut workspace = Workspace::new();
     let mut paths = Vec::new();
     let mut texts = HashMap::new();
@@ -467,440 +220,7 @@ fn collect_djot_files(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), String>
     }
     Ok(())
 }
-
-fn document_title(text: &str) -> Option<String> {
-    let metadata = metadata_block(text)?;
-    let value: toml::Value = toml::from_str(&metadata).ok()?;
-    value
-        .get("title")
-        .and_then(|title| title.as_str())
-        .map(str::to_string)
-}
-
-fn datetime_value(value: Option<&str>) -> Value {
-    value
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-        .map_or(Value::Null, Value::Timestamp)
-}
-
-fn value_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::List(_) => "list",
-        Value::Map(_) => "map",
-        Value::Function(_, _) => "function",
-        Value::Int(_) => "int",
-        Value::UInt(_) => "uint",
-        Value::Float(_) => "float",
-        Value::String(_) => "string",
-        Value::Bytes(_) => "bytes",
-        Value::Bool(_) => "bool",
-        Value::Duration(_) => "duration",
-        Value::Timestamp(_) => "timestamp",
-        Value::Opaque(_) => "opaque",
-        Value::Null => "null",
-    }
-}
-
-fn highlight_djot_preview(text: &str) -> String {
-    let mut in_code_block = false;
-    let mut lines = Vec::new();
-
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
-            lines.push(ansi_color(line, "36"));
-        } else if in_code_block {
-            lines.push(ansi_color(line, "90"));
-        } else if trimmed.starts_with("{.metadata}") {
-            lines.push(ansi_color(line, "35"));
-        } else if trimmed.starts_with('#') {
-            lines.push(ansi_color(line, "1;34"));
-        } else {
-            lines.push(highlight_links(line));
-        }
-    }
-
-    lines.join("\n")
-}
-
-fn highlight_links(line: &str) -> String {
-    let mut out = String::new();
-    let mut rest = line;
-    while let Some(open) = rest.find('[') {
-        let before = &rest[..open];
-        out.push_str(before);
-        let Some(close_rel) = rest[open..].find(']') else {
-            out.push_str(&rest[open..]);
-            return out;
-        };
-        let close = open + close_rel;
-        let after_close = &rest[close + 1..];
-        if after_close.starts_with('(') {
-            let Some(dst_close) = after_close.find(')') else {
-                out.push_str(&rest[open..]);
-                return out;
-            };
-            let link_end = close + 1 + dst_close + 1;
-            out.push_str(&ansi_color(&rest[open..link_end], "32"));
-            rest = &rest[link_end..];
-        } else {
-            out.push_str(&rest[open..=close]);
-            rest = after_close;
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-fn ansi_bold(text: &str) -> String {
-    ansi_color(text, "1")
-}
-
-fn ansi_dim(text: &str) -> String {
-    ansi_color(text, "2")
-}
-
-fn ansi_color(text: &str, code: &str) -> String {
-    format!("\x1b[{code}m{text}\x1b[0m")
-}
-
-fn run_interactive(
-    root: &Path,
-    paths: &[PathBuf],
-    texts: &HashMap<PathBuf, String>,
-) -> Result<InteractiveAction, String> {
-    let options = SkimOptionsBuilder::default()
-        .height(Some("100%"))
-        .multi(true)
-        .preview(Some(""))
-        .bind(vec!["ctrl-n:accept"])
-        .build()
-        .map_err(|err| err.to_string())?;
-    let (sender, receiver): (SkimItemSender, SkimItemReceiver) = unbounded();
-
-    for path in paths {
-        let Some(text) = texts.get(path) else {
-            continue;
-        };
-        let item = FilterItem::new(display_path(root, path), text.clone());
-        sender
-            .send(Arc::new(item))
-            .map_err(|err| format!("cannot send item to skim: {err}"))?;
-    }
-    drop(sender);
-
-    let output = Skim::run_with(&options, Some(receiver));
-    let Some(output) = output else {
-        return Ok(InteractiveAction::Open(Vec::new()));
-    };
-    if output.final_key == Key::Ctrl('n') {
-        return Ok(InteractiveAction::Create(output.query));
-    }
-
-    Ok(InteractiveAction::Open(
-        output
-            .selected_items
-            .into_iter()
-            .map(|item| item.output().into_owned())
-            .collect(),
-    ))
-}
-
-fn handle_interactive_action(root: &Path, action: InteractiveAction) -> Result<(), String> {
-    match action {
-        InteractiveAction::Open(selected) => open_in_editor(root, &selected),
-        InteractiveAction::Create(name) => {
-            let path = create_file_from_query(root, &name)?;
-            open_paths_in_editor(&[path])
-        }
-    }
-}
-
-fn open_in_editor(root: &Path, selected: &[String]) -> Result<(), String> {
-    if selected.is_empty() {
-        return Ok(());
-    }
-
-    let paths = editor_paths(root, selected);
-    open_paths_in_editor(&paths)
-}
-
-fn open_paths_in_editor(paths: &[PathBuf]) -> Result<(), String> {
-    if paths.is_empty() {
-        return Ok(());
-    }
-
-    let editor = std::env::var("EDITOR")
-        .map_err(|_| "--interactive selected files, but EDITOR is not set".to_string())?;
-    let (program, args) = editor_command(&editor)?;
-    let status = Command::new(&program)
-        .args(args)
-        .args(paths)
-        .status()
-        .map_err(|err| format!("cannot run editor `{program}`: {err}"))?;
-
-    if !status.success() {
-        return Err(format!("editor `{program}` exited with {status}"));
-    }
-
-    Ok(())
-}
-
-fn create_file_from_query(root: &Path, query: &str) -> Result<PathBuf, String> {
-    let name = query.trim();
-    if name.is_empty() {
-        return Err("cannot create a file from an empty query".to_string());
-    }
-
-    let path = normalize(&root.join(with_default_extension(name)));
-    if !path.starts_with(root) {
-        return Err(format!("new file path escapes root: {name}"));
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|err| format!("cannot create directory {}: {err}", parent.display()))?;
-    }
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|err| format!("cannot create {}: {err}", path.display()))?;
-
-    Ok(path)
-}
-
-fn with_default_extension(name: &str) -> PathBuf {
-    let path = Path::new(name);
-    if is_djot_file(path) {
-        path.to_path_buf()
-    } else {
-        path.with_extension("dj")
-    }
-}
-
-fn editor_command(editor: &str) -> Result<(String, Vec<String>), String> {
-    let mut parts =
-        shlex::split(editor).ok_or_else(|| format!("cannot parse EDITOR={editor:?}"))?;
-    if parts.is_empty() {
-        return Err("EDITOR is empty".to_string());
-    }
-    let program = parts.remove(0);
-    Ok((program, parts))
-}
-
-fn editor_paths(root: &Path, selected: &[String]) -> Vec<PathBuf> {
-    selected
-        .iter()
-        .map(|path| {
-            let path = Path::new(path);
-            if path.is_absolute() {
-                normalize(path)
-            } else {
-                normalize(&root.join(path))
-            }
-        })
-        .collect()
-}
-
-fn print_tasks(
-    root: &Path,
-    docs: &LoadedDocs,
-    plan: Option<&QueryPlan>,
-    tree: bool,
-) -> Result<(), String> {
-    let mut records = Vec::new();
-    for path in &docs.paths {
-        let Some(text) = docs.texts.get(path) else {
-            continue;
-        };
-        for task in tasks(text) {
-            if task_matches(root, &docs.workspace, path, &task, plan)? {
-                records.push(task_output_record(root, path, &task, tree));
-            }
-        }
-    }
-    if !records.is_empty() {
-        println!("{}", task_table(&records));
-    }
-    Ok(())
-}
-
-fn run_task_action(root: &Path, action: &TaskAction) -> Result<(), String> {
-    match action {
-        TaskAction::Done(config) => {
-            let done = Local::now()
-                .fixed_offset()
-                .to_rfc3339_opts(SecondsFormat::Secs, true);
-            for target in &config.targets {
-                complete_task_target(root, target, &done)?;
-            }
-            Ok(())
-        }
-    }
-}
-
-fn complete_task_target(root: &Path, target: &str, done: &str) -> Result<(), String> {
-    let task_ref = parse_task_target(root, target)?;
-    let text = std::fs::read_to_string(&task_ref.path)
-        .map_err(|err| format!("cannot read {}: {err}", task_ref.path.display()))?;
-    let edits = task_done_edits_by_id(&text, &task_ref.id, done).map_err(task_edit_error)?;
-    let updated = apply_text_edits(text, edits).map_err(edit_error)?;
-    std::fs::write(&task_ref.path, updated)
-        .map_err(|err| format!("cannot write {}: {err}", task_ref.path.display()))
-}
-
-fn task_edit_error(err: TaskEditError) -> String {
-    match err {
-        TaskEditError::TaskIdNotFound { id } => format!("task id not found: {id}"),
-        TaskEditError::TaskAlreadyDone { id } => format!("task is already done: {id}"),
-        TaskEditError::TaskCanceled { id } => format!("task is canceled: {id}"),
-        TaskEditError::CannotBuildEdit { id } => format!("cannot build done edit for task: {id}"),
-    }
-}
-
-fn edit_error(err: EditError) -> String {
-    match err {
-        EditError::OverlappingEdits => "task edits overlap".to_string(),
-        EditError::EditRangeOutsideDocument => {
-            "task edit range is outside the document".to_string()
-        }
-    }
-}
-
-fn parse_task_target(root: &Path, target: &str) -> Result<TaskRef, String> {
-    let (path, id) = target
-        .split_once('#')
-        .ok_or_else(|| format!("task target must be written as path.dj#task-id: {target}"))?;
-    if path.is_empty() || id.is_empty() {
-        return Err(format!(
-            "task target must include both path and id: {target}"
-        ));
-    }
-    let path = Path::new(path);
-    let path = if path.is_absolute() {
-        normalize(path)
-    } else {
-        normalize(&root.join(path))
-    };
-    if !path.starts_with(root) {
-        return Err(format!("task target escapes root: {target}"));
-    }
-    if !is_djot_file(&path) {
-        return Err(format!("task target is not a Djot file: {target}"));
-    }
-    Ok(TaskRef {
-        path,
-        id: id.to_string(),
-    })
-}
-
-fn task_matches(
-    root: &Path,
-    workspace: &Workspace,
-    path: &Path,
-    task: &Task,
-    plan: Option<&QueryPlan>,
-) -> Result<bool, String> {
-    let Some(plan) = plan else {
-        return Ok(true);
-    };
-    let depends_on = workspace
-        .task_dependencies(path, task)
-        .into_iter()
-        .map(|dependency| display_task_ref(root, &dependency.target))
-        .collect();
-    let directly_blocking = task
-        .id
-        .as_deref()
-        .map(|id| {
-            workspace
-                .directly_blocking_tasks(path, id)
-                .into_iter()
-                .map(|task_ref| display_task_ref(root, &task_ref))
-                .collect()
-        })
-        .unwrap_or_default();
-    let blocked = workspace.is_task_blocked(path, task);
-    let actionable = task_is_actionable(task, blocked, plan.now);
-    plan.matches_task(TaskRecord {
-        root,
-        path,
-        id: task.id.as_deref(),
-        title: &task.title,
-        created: task.created.as_deref(),
-        done: task.done.as_deref(),
-        canceled: task.canceled.as_deref(),
-        due: task.due.as_deref(),
-        wait: task.wait.as_deref(),
-        recur: task.recur.as_deref(),
-        prev: task.prev.as_deref(),
-        depends_on,
-        directly_blocking,
-        blocked,
-        actionable,
-    })
-}
-
-fn task_is_actionable(task: &Task, blocked: bool, now: DateTime<FixedOffset>) -> bool {
-    task.done.is_none()
-        && task.canceled.is_none()
-        && !blocked
-        && task
-            .wait
-            .as_deref()
-            .and_then(|wait| DateTime::parse_from_rfc3339(wait).ok())
-            .is_none_or(|wait| wait <= now)
-}
-
-fn display_task_ref(root: &Path, task_ref: &TaskRef) -> String {
-    format!("{}#{}", display_path(root, &task_ref.path), task_ref.id)
-}
-
-fn task_output_record(root: &Path, path: &Path, task: &Task, tree: bool) -> TaskOutputRecord {
-    let status = if task.canceled.is_some() {
-        "x"
-    } else if task.done.is_some() {
-        "o"
-    } else {
-        "-"
-    };
-    let source = match task.id.as_deref() {
-        Some(id) => format!("{}#{id}", display_path(root, path)),
-        None => display_path(root, path),
-    };
-    TaskOutputRecord {
-        status: status.to_string(),
-        title: task_title(task, tree),
-        source,
-    }
-}
-
-fn task_title(task: &Task, tree: bool) -> String {
-    if !tree || task.depth == 0 {
-        return task.title.clone();
-    }
-    format!("{}> {}", "  ".repeat(task.depth - 1), task.title)
-}
-
-fn task_table(records: &[TaskOutputRecord]) -> String {
-    let mut table = Table::new();
-    table
-        .load_preset(NOTHING)
-        .set_content_arrangement(ContentArrangement::Dynamic);
-    for record in records {
-        table.add_row([&record.status, &record.title, &record.source]);
-    }
-    table.to_string()
-}
-
-fn print_paths(paths: impl IntoIterator<Item = String>) {
-    for path in paths {
-        println!("{path}");
-    }
-}
-
-fn absolute_path(path: &Path) -> PathBuf {
+pub(crate) fn absolute_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         normalize(path)
     } else {
@@ -916,7 +236,7 @@ fn default_root(config: &Config) -> PathBuf {
     absolute_path(config.root.as_deref().unwrap_or_else(|| Path::new(".")))
 }
 
-fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -930,13 +250,13 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-fn is_djot_file(path: &Path) -> bool {
+pub(crate) fn is_djot_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext == "dj" || ext == "djot")
 }
 
-fn display_path(root: &Path, path: &Path) -> String {
+pub(crate) fn display_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .display()
@@ -946,6 +266,8 @@ fn display_path(root: &Path, path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use djot_core::tasks;
+    use skim::SkimItem;
 
     #[test]
     fn root_defaults_to_current_directory() {
