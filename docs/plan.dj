@@ -102,7 +102,7 @@ Current `djot-filter` usage and query context are documented in
 - [x] Add a generic `djot-core` edit model for document text edits and
   workspace edit plans; rename/path-rename semantics now emit protocol-neutral
   edits before LSP converts them to client workspace edits.
-- [ ] Split large crate entry points into focused modules as the shared
+- [x] Split large crate entry points into focused modules as the shared
   analysis model settles:
 
   - [x] `djot-core`: split workspace state and cross-document operations into
@@ -121,6 +121,19 @@ Current `djot-filter` usage and query context are documented in
   - [x] `djot-filter`: split skim item construction, preview, file creation,
     and editor launching into `interactive.rs`.
   - [x] `djot-filter`: split table/output rendering into `render.rs`.
+
+- [ ] Continue targeted module cleanup where file size now hides ownership
+  boundaries:
+
+  - [x] `djot-ls`: split workspace indexing, diagnostics publication,
+    path/symbol helpers, and byte/UTF-16 position conversion out of `main.rs`.
+  - [ ] `djot-ls`: split `ServerState` request/notification handlers out of
+    `main.rs` once the helper module boundaries settle.
+  - [ ] `djot-core`: split the large root test module into focused test files
+    for analysis, workspace behavior, rename, and task editing.
+  - [ ] `djot-core`: split task model, task edit planning, recurrence, and
+    task attribute helpers out of `tasks.rs` if task CLI/editor actions keep
+    growing.
 
 - [ ] Defer disk-backed analysis caching until parsing shows up as a real
   bottleneck. If added, keep the cache limited to saved on-disk files and let
