@@ -10,6 +10,16 @@ drift.
 
 # Features
 
+- [ ] Stabilization priorities:
+
+  - [ ] treat `cargo check --workspace --all-targets` as a required warning
+    gate alongside `cargo test`, so production and test-target warnings do not
+    drift.
+  - [ ] implement workspace file-change handling before advertising or
+    registering file watchers.
+  - [ ] reconcile optimistic path rename indexing with the eventual client or
+    file-system outcome.
+
 - [ ] `textDocument/documentSymbol`
 
   - [x] headings
@@ -148,6 +158,10 @@ Current `djot-filter` usage and query context are documented in
   - task dependency cycles
   - recurring task advancement
   - file rename edits and reference updates
+
+- [ ] Consolidate repeated LSP black-box test helpers for temporary workspaces,
+  URI construction, request/response lookup, and JSON result extraction, so new
+  integration tests stay small and consistent.
 
 # Future: note/task tooling
 
