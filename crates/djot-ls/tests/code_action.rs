@@ -237,6 +237,40 @@ fn code_action_marks_inline_list_task_done() {
 }
 
 #[test]
+fn code_action_marks_nested_list_shaped_task_under_cursor_done() {
+    let doc = "{#parent}\n:::: task\nParent\n\n- {#passive}\n  ::: task\n  Passive joint.\n  :::\n- {#animated}\n  ::: task\n  Animated joint.\n  :::\n::::\n";
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tasks.dj","languageId":"djot","version":1,"text":doc}}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction",
+        "params":{
+            "textDocument":{"uri":"file:///tasks.dj"},
+            "range":{"start":{"line":10,"character":4},"end":{"line":10,"character":4}},
+            "context":{"diagnostics":[],"only":["quickfix"]}
+        }}),
+        json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let actions = code_actions(&responses, 2);
+    assert_eq!(actions.len(), 2);
+
+    let action = code_action_by_title(actions, "Complete task");
+    let edit = &action["edit"]["changes"]["file:///tasks.dj"][0];
+    assert_eq!(
+        edit["range"],
+        json!({"start":{"line":9,"character":0},"end":{"line":9,"character":0}})
+    );
+
+    let inserted = edit["newText"].as_str().expect("newText is not a string");
+    assert!(inserted.starts_with("  {done=\""));
+    assert!(inserted.ends_with("\"}\n"));
+    assert_timestamp_shape(inserted, "  {done=\"");
+}
+
+#[test]
 fn code_action_does_not_mark_canceled_task_done() {
     let doc = "# Tasks\n\n{canceled=\"2026-06-20T09:30:00Z\"}\n::: task\nCanceled task.\n:::\n";
     let msgs = [

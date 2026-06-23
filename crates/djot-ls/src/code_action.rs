@@ -69,12 +69,13 @@ pub(crate) fn resolve_code_actions(
             .analysis
             .tasks
             .iter()
-            .find(|task| {
+            .filter(|task| {
                 task.done.is_none()
                     && task.canceled.is_none()
                     && task.range.start <= offset
                     && offset <= task.range.end
             })
+            .max_by_key(|task| task.range.start)
             .is_some_and(|task| workspace.is_task_blocked(path, task));
         if !task_is_blocked {
             if let Some(completion) = task_status_edits_at(

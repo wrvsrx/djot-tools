@@ -43,12 +43,16 @@ pub fn task_status_edits_at(
     timestamp: &str,
 ) -> Option<TaskStatusEdit> {
     let analysis = analyze(text);
-    let task = analysis.tasks.iter().find(|task| {
-        task.done.is_none()
-            && task.canceled.is_none()
-            && task.range.start <= offset
-            && offset <= task.range.end
-    })?;
+    let task = analysis
+        .tasks
+        .iter()
+        .filter(|task| {
+            task.done.is_none()
+                && task.canceled.is_none()
+                && task.range.start <= offset
+                && offset <= task.range.end
+        })
+        .max_by_key(|task| task.range.start)?;
     task_status_edits_for_task(text, task, status, timestamp, true)
 }
 

@@ -117,7 +117,8 @@ impl Workspace {
             .analysis
             .tasks
             .iter()
-            .find(|task| task.range.contains(&offset))
+            .filter(|task| task.range.start <= offset && offset <= task.range.end)
+            .max_by_key(|task| task.range.start)
     }
 
     pub fn task_dependencies(&self, path: &Path, task: &Task) -> Vec<ResolvedTaskDependency> {
