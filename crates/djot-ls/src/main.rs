@@ -7,6 +7,7 @@ mod lsp_utils;
 mod path_utils;
 mod position;
 mod rename;
+mod semantic_tokens;
 mod server;
 mod symbols;
 mod workspace_index;

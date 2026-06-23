@@ -50,10 +50,16 @@ relative path and line, and a short djot source preview.
 On task divs, hover shows the task title, current state, id, task datetimes,
 recurrence, previous-task reference, dependency list, and open blockers.
 
+## `textDocument/semanticTokens/full`
+
+Marks closed task titles with semantic tokens. The server advertises a custom
+`task` token type and `completed` modifier for task divs with `done` or
+`canceled` metadata, and for checked native Djot task list items.
+
 Document sync is full-text.
 
-More capabilities (diagnostics, completion, semantic tokens) are
-planned -- see [`docs/plan.dj`](docs/plan.dj) for the roadmap.
+More capabilities are planned -- see [`docs/plan.dj`](docs/plan.dj) for the
+roadmap.
 
 # Export
 

@@ -54,6 +54,11 @@ drift.
 
 - [x] `textDocument/references`
 
+- [x] `textDocument/semanticTokens/full`
+
+  - [x] mark closed task titles with a custom `task` token type and
+    `completed` modifier
+
 - [x] `textDocument/rename`
 
   - [x] rename explicit anchors and all workspace references to them

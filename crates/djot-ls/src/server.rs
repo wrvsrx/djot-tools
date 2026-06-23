@@ -15,8 +15,9 @@ use lsp_types::{
     HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
     InitializedParams, Location, MarkupContent, MarkupKind, OneOf, Position, PrepareRenameResponse,
     ReferenceParams, Registration, RegistrationParams, RenameOptions, RenameParams,
-    ServerCapabilities, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url, WatchKind, WorkDoneProgressOptions, WorkspaceEdit,
+    SemanticTokensParams, SemanticTokensResult, ServerCapabilities, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WatchKind, WorkDoneProgressOptions,
+    WorkspaceEdit,
 };
 
 use crate::code_action::resolve_code_actions as resolve_code_actions_for_document;
@@ -26,6 +27,7 @@ use crate::lsp_utils::*;
 use crate::path_utils::{is_djot_file, relative_link_path};
 use crate::position::{byte_range_to_lsp, position_to_offset};
 use crate::rename::{anchor_rename_workspace_edit, path_rename_workspace_edit};
+use crate::semantic_tokens::{semantic_tokens_provider, task_semantic_tokens};
 use crate::symbols::{document_symbols, document_title};
 
 /// Server state. async-lsp's omni-trait hands us `&mut self` on every request and
@@ -120,6 +122,7 @@ impl LanguageServer for ServerState {
                             work_done_progress_options: WorkDoneProgressOptions::default(),
                         },
                     )),
+                    semantic_tokens_provider: Some(semantic_tokens_provider()),
                     ..ServerCapabilities::default()
                 },
                 server_info: None,
@@ -287,6 +290,28 @@ impl LanguageServer for ServerState {
     ) -> BoxFuture<'static, Result<Option<CodeActionResponse>, Self::Error>> {
         let actions = self.resolve_code_actions(&params);
         Box::pin(async move { Ok(actions) })
+    }
+
+    fn semantic_tokens_full(
+        &mut self,
+        params: SemanticTokensParams,
+    ) -> BoxFuture<'static, Result<Option<SemanticTokensResult>, Self::Error>> {
+        let tokens = params
+            .text_document
+            .uri
+            .to_file_path()
+            .ok()
+            .and_then(|path| {
+                self.workspace.get(&path).map(|entry| {
+                    task_semantic_tokens(
+                        &entry.text,
+                        &entry.analysis.tasks,
+                        &entry.analysis.native_task_list_items,
+                    )
+                    .into()
+                })
+            });
+        Box::pin(async move { Ok(tokens) })
     }
 
     fn prepare_rename(
