@@ -13,8 +13,9 @@ drift.
 - [ ] `textDocument/documentSymbol`
 
   - [x] headings
-  - [ ] anchor?
-  - [ ] list?
+  - [ ] explicit anchors
+  - [ ] tasks
+  - [ ] native task list items
 
 - [x] `textDocument/definition`
 
@@ -104,10 +105,22 @@ Current `djot-filter` usage and query context are documented in
 - [ ] Split large crate entry points into focused modules as the shared
   analysis model settles:
 
-  - `djot-ls`: completion, diagnostics, rename, code actions, and task/editor
-    affordances
-  - `djot-filter`: CEL query evaluation, task actions, interactive skim mode,
-    and table/rendering output
+  - [ ] `djot-core`: split workspace state and cross-document operations into
+    `workspace.rs`.
+  - [ ] `djot-core`: split reference target parsing, resolution, and reverse
+    reference helpers into `references.rs`.
+  - [ ] `djot-core`: split lexical path normalization, relative link paths,
+    percent decoding, and Djot file path predicates into `paths.rs`.
+  - [ ] `djot-core`: split anchor/path rename target discovery and edit
+    planning into `rename.rs`.
+  - [ ] `djot-core`: split single-document parsing and `Analysis` construction
+    into `analysis.rs`.
+  - [ ] `djot-filter`: split CEL query compilation/evaluation into `query.rs`.
+  - [ ] `djot-filter`: split task listing and task-editing CLI actions into
+    `tasks.rs`.
+  - [ ] `djot-filter`: split skim item construction, preview, file creation,
+    and editor launching into `interactive.rs`.
+  - [ ] `djot-filter`: split table/output rendering into `render.rs`.
 
 - [ ] Defer disk-backed analysis caching until parsing shows up as a real
   bottleneck. If added, keep the cache limited to saved on-disk files and let
@@ -143,6 +156,7 @@ support.
   - [x] for list-shaped recurring tasks, append the next instance as a new list
     item instead of an indented task block in the same list item
   - [ ] code action to remove `done`
+  - [ ] code action to reopen a completed or canceled task
   - [x] code action to convert a native Djot task list item into a task div
   - [x] filter tasks by completion state, created datetime, and done/canceled
     datetime in `djot-filter`
@@ -170,7 +184,9 @@ support.
   - [x] Add an explicit action for marking a task done.
   - [x] Have `done` advance recurring tasks by appending the next open
     instance.
-  - [ ] Add actions for removing `done`, canceling tasks, and reopening tasks.
+  - [ ] Add a direct action for removing `done`.
+  - [ ] Add a direct action for canceling tasks.
+  - [ ] Add a direct action for reopening completed or canceled tasks.
   - [ ] Reuse the same core task editing semantics as the LSP code actions so
     CLI and editor behavior stay consistent.
   - Consider batch and interactive forms after the direct action exists, such as
@@ -221,10 +237,20 @@ Remaining work:
 
 # Workspace integration
 
-- [ ] Track external workspace file changes after initialization, likely via
-  `workspace/didChangeWatchedFiles` plus targeted re-indexing. If this
-  advertises a new client capability, implement the corresponding
-  `LanguageServer` notification handler at the same time so async-lsp's
-  omni-trait default handler cannot terminate the server. For Neovim on Linux,
-  see [neovim file watching](neovim-file-watching.dj); reliable external
+- [ ] Track external workspace file changes after initialization. For Neovim on
+  Linux, see [neovim file watching](neovim-file-watching.dj); reliable external
   updates should not depend solely on client-side LSP file watching.
+
+  - [ ] Add a `workspace/didChangeWatchedFiles` notification handler before
+    advertising or dynamically registering file-watching behavior. async-lsp's
+    omni-trait default handler can terminate the server for unimplemented
+    standard notifications.
+  - [ ] Add targeted re-indexing for created, changed, and deleted `.dj` /
+    `.djot` paths.
+  - [ ] Optionally register narrow LSP file watchers such as `**/*.dj` and
+    `**/*.djot` when the client advertises dynamic registration.
+  - [ ] Add a server-side watcher for reliable external updates on Linux,
+    scoped to Djot documents and conservative around large workspaces,
+    deletions, and overflow/recovery behavior.
+  - [ ] Reconcile optimistic path rename indexing with the eventual client or
+    file-system outcome, using file notifications or targeted re-indexing.
