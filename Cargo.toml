@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/djot-core", "crates/djot-ls", "crates/djot-export", "crates/djot-filter"]
 
 [workspace.package]
-version = "0.20.0-dev"
+version = "0.19.1"
 edition = "2021"
 license = "MIT"
 
