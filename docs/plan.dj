@@ -258,6 +258,31 @@ support.
   - Leave richer fields such as `parent`, `children`, and `has_open_children`
     for a later semantic pass.
 
+- [ ] Unify nested subtasks and explicit task dependencies as blocker edges:
+
+  - Treat a nested task as creating a blocker edge from the parent task to the
+    child task, the same blocker graph used by explicit `depends` attributes.
+  - Keep edge provenance, such as nested structure versus `depends`, for
+    diagnostics, display projection, and edit generation rather than for
+    separate blocking semantics.
+  - Let `blocked`, `actionable`, `blocked_by`, `directly_blocking`, cycle
+    diagnostics, and task filtering use the unified blocker graph.
+  - Allow anonymous nested tasks to block their parent using document-local
+    identity such as source range, while keeping explicit `depends` targets
+    restricted to anchored tasks.
+  - Display nested blocker edges in the title tree by default, and display
+    explicit dependency edges in blocker columns or focused graph views so
+    shared dependencies are not duplicated as tree children.
+
+- [ ] Add table headings to `djot-filter task` output before adding richer
+  blocker columns:
+
+  - Keep the status, title, and source columns visually labeled so future
+    dependency or blocker columns do not need repeated inline labels such as
+    `blocked by`.
+  - Preserve a script-friendly escape hatch such as `--no-heading` or a future
+    structured output format.
+
 # Notes
 
 Current metadata semantics are documented in [semantics](semantics.dj#Metadata).
