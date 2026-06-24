@@ -241,6 +241,23 @@ support.
     applying an action to `djot-filter task --query ...` results or selected
     skim items.
 
+- [ ] Add a local live web UI for task review and actions:
+
+  - Add a small `djot-live` binary that serves a root directory on
+    `127.0.0.1`, scans `.dj` / `.djot` files, and reuses `djot-core::Workspace`
+    for task analysis, dependency state, and edit planning.
+  - Start with a task dashboard rather than a full notes app: open, waiting,
+    blocked, completed, and canceled tasks with title, source, due/wait fields,
+    and direct blockers.
+  - Let task action buttons apply the same core edits as LSP and
+    `djot-filter`, including complete, cancel, reopen/remove `done`, and
+    recurring-task advancement as those edit helpers become available.
+  - Keep writes constrained to the configured root, re-read files before
+    applying edits to avoid stale page actions, and treat unsaved editor buffers
+    as out of scope for the first version.
+  - Prefer simple progressive interactivity, such as server-rendered HTML plus
+    lightweight partial updates, before considering a larger frontend stack.
+
 - [x] Add task dependency semantics, separate from subtasks:
 
   - Model dependencies as execution constraints, not document structure.
