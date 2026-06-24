@@ -163,6 +163,30 @@ fn recurring_list_task_with_trailing_blank_line_creates_next_list_item() {
 }
 
 #[test]
+fn recurring_list_task_before_heading_creates_next_list_item() {
+    let text = "- {#daily created=\"2026-06-25T00:18:28+08:00\"}\n  {recur=\"P1D\"}\n  {due=\"2026-06-25T00:18:42+08:00\"}\n  ::: task\n  task 1\n  :::\n\n# some headings\n";
+    let edits = task_done_edits_by_id(text, "daily", "2026-06-25T00:19:00+08:00").unwrap();
+    let updated = apply_text_edits(text.to_string(), edits).unwrap();
+
+    assert_eq!(
+        updated,
+        "- {#daily created=\"2026-06-25T00:18:28+08:00\"}\n  {recur=\"P1D\"}\n  {due=\"2026-06-25T00:18:42+08:00\"}\n  {done=\"2026-06-25T00:19:00+08:00\"}\n  ::: task\n  task 1\n  :::\n- {#task-1-2026-06-26}\n  {created=\"2026-06-25T00:19:00+08:00\" due=\"2026-06-26T00:18:42+08:00\" recur=\"P1D\" prev=\"#daily\"}\n  ::: task\n  task 1\n  :::\n\n# some headings\n"
+    );
+}
+
+#[test]
+fn recurring_list_task_at_file_end_reuses_final_newline() {
+    let text = "- {#daily created=\"2026-06-25T00:18:28+08:00\"}\n  {recur=\"P1D\"}\n  {due=\"2026-06-25T00:18:42+08:00\"}\n  ::: task\n  task 2\n  :::\n";
+    let edits = task_done_edits_by_id(text, "daily", "2026-06-25T00:19:00+08:00").unwrap();
+    let updated = apply_text_edits(text.to_string(), edits).unwrap();
+
+    assert_eq!(
+        updated,
+        "- {#daily created=\"2026-06-25T00:18:28+08:00\"}\n  {recur=\"P1D\"}\n  {due=\"2026-06-25T00:18:42+08:00\"}\n  {done=\"2026-06-25T00:19:00+08:00\"}\n  ::: task\n  task 2\n  :::\n- {#task-2-2026-06-26}\n  {created=\"2026-06-25T00:19:00+08:00\" due=\"2026-06-26T00:18:42+08:00\" recur=\"P1D\" prev=\"#daily\"}\n  ::: task\n  task 2\n  :::\n"
+    );
+}
+
+#[test]
 fn task_list_item_conversion_edit_converts_open_native_task() {
     let text = "# Tasks\n\n  - [ ] Write parser.\n";
     let edit =

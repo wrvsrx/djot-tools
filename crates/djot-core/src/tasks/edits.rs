@@ -215,7 +215,8 @@ fn recurring_task_status_edits(
         Some(context) => TextEdit {
             range: context.insert..context.insert,
             new_text: format!(
-                "\n{list_indent}- {next_id_attribute}\n{indent}{{created=\"{timestamp}\" due=\"{next_due_text}\"{next_wait_attribute} recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}",
+                "{separator}{list_indent}- {next_id_attribute}\n{indent}{{created=\"{timestamp}\" due=\"{next_due_text}\"{next_wait_attribute} recur=\"{recur}\" prev=\"#{current_id_text}\"}}\n{div}",
+                separator = context.separator,
                 list_indent = context.list_indent,
             ),
         },
@@ -241,6 +242,7 @@ fn recurring_task_status_edits(
 struct ListTaskContext<'a> {
     list_indent: &'a str,
     insert: usize,
+    separator: &'static str,
 }
 
 fn single_task_list_item_context<'a>(
@@ -265,10 +267,16 @@ fn single_task_list_item_context<'a>(
     if count_task_fences(text.get(list_start..list_end)?) != 1 {
         return None;
     }
+    let (insert, separator) = if text.as_bytes().get(task_end_line) == Some(&b'\n') {
+        (task_end_line + 1, "")
+    } else {
+        (task_end_line, "\n")
+    };
 
     Some(ListTaskContext {
         list_indent,
-        insert: list_end,
+        insert,
+        separator,
     })
 }
 
@@ -326,10 +334,7 @@ fn list_item_end(text: &str, list_start: usize, list_indent: &str) -> Option<usi
             .unwrap_or(text.get(line_start..line_end)?);
         if !line.trim().is_empty() {
             let indent = leading_indent(line);
-            let trimmed = line.trim_start();
-            if indent.len() <= list_indent.len()
-                && (trimmed.starts_with("- ") || trimmed.starts_with("+ "))
-            {
+            if indent.len() <= list_indent.len() {
                 break;
             }
         }
