@@ -274,7 +274,7 @@ support.
     explicit dependency edges in blocker columns or focused graph views so
     shared dependencies are not duplicated as tree children.
 
-- [ ] Add table headings to `djot-filter task` output before adding richer
+- [x] Add table headings to `djot-filter task` output before adding richer
   blocker columns:
 
   - Keep the status, title, and source columns visually labeled so future

@@ -21,6 +21,7 @@ pub(crate) fn print_tasks(
     docs: &LoadedDocs,
     plan: Option<&QueryPlan>,
     tree: bool,
+    heading: bool,
 ) -> Result<(), String> {
     let mut records = Vec::new();
     for path in &docs.paths {
@@ -34,7 +35,7 @@ pub(crate) fn print_tasks(
         }
     }
     if !records.is_empty() {
-        println!("{}", task_table(&records));
+        println!("{}", task_table(&records, heading));
     }
     Ok(())
 }

@@ -106,7 +106,8 @@ fn main() -> ExitCode {
                 },
                 None => None,
             };
-            if let Err(err) = print_tasks(&root, &docs, plan.as_ref(), !task.flat) {
+            if let Err(err) = print_tasks(&root, &docs, plan.as_ref(), !task.flat, !task.no_heading)
+            {
                 eprintln!("djot-filter: {err}");
                 return ExitCode::FAILURE;
             }
@@ -155,6 +156,10 @@ struct TaskConfig {
     /// Print task titles without nested task tree markers.
     #[arg(long)]
     flat: bool,
+
+    /// Print task rows without the table heading.
+    #[arg(long)]
+    no_heading: bool,
 
     #[command(subcommand)]
     action: Option<TaskAction>,
@@ -317,6 +322,7 @@ mod tests {
             config.command,
             CommandMode::Task(TaskConfig {
                 flat: false,
+                no_heading: false,
                 action: None,
             })
         ));
@@ -332,6 +338,21 @@ mod tests {
             config.command,
             CommandMode::Task(TaskConfig {
                 flat: true,
+                no_heading: false,
+                action: None,
+            })
+        ));
+    }
+
+    #[test]
+    fn task_subcommand_accepts_no_heading_flag() {
+        let config = Config::parse_from(["djot-filter", "task", "--no-heading"]);
+
+        assert!(matches!(
+            config.command,
+            CommandMode::Task(TaskConfig {
+                flat: false,
+                no_heading: true,
                 action: None,
             })
         ));

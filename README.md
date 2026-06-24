@@ -95,9 +95,11 @@ current query, relative to `--root`, adds a `.dj` extension when the query has
 no `.dj` / `.djot` extension, and opens it with `EDITOR`.
 
 The `task` subcommand prints task blocks and applies the same `--query`
-mechanism to task records. Task output uses `-` for open tasks, `o` for done
-tasks, and `x` for canceled tasks. Nested task titles are prefixed with ASCII
-markers by default; `--flat` keeps the same table columns but prints raw titles.
+mechanism to task records. Task output includes `S`, `Task`, and `Source`
+headings; `S` uses `-` for open tasks, `o` for done tasks, and `x` for
+canceled tasks. Nested task titles are prefixed with ASCII markers by default;
+`--flat` keeps the same table columns but prints raw titles, and
+`--no-heading` omits the heading row.
 Task output is sorted by root-relative path, then by source order within each
 file. Task queries expose `path`, `id`, `title`, `created`, `due`, `wait`,
 `done`, `canceled`, `recur`, `prev`, `depends_on`, `directly_blocking`,
