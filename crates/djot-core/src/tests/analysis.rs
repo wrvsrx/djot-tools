@@ -96,6 +96,20 @@ fn index_tracks_anchor_rename_ranges() {
 }
 
 #[test]
+fn explicit_heading_anchor_is_not_reported_as_duplicate() {
+    let text = "{#something}\n# Addd\n";
+    let analysis = analyze(text);
+
+    let anchor = &analysis.index.anchors["something"];
+    assert_eq!(&text[anchor.rename_range.clone()], "something");
+    assert!(anchor.explicit);
+    assert!(!analysis
+        .diagnostics
+        .iter()
+        .any(|diagnostic| matches!(diagnostic.kind, DiagnosticKind::DuplicateAnchor { .. })));
+}
+
+#[test]
 fn index_tracks_reference_target_id_ranges() {
     let text = "[internal](#Topic) [external](other.dj#Section) [file](other.dj) [implicit][]";
     let index = build_index(text);

@@ -145,6 +145,7 @@ pub fn analyze(text: &str) -> Analysis {
     let mut diagnostics = Vec::new();
     let mut metadata = None;
     let mut metadata_capture: Option<String> = None;
+    let mut pending_section_anchor_ranges: Vec<(String, Range<usize>)> = Vec::new();
     let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
     let mut open_links: Vec<(String, usize)> = Vec::new();
     let mut task_stack: Vec<TaskFrame> = Vec::new();
@@ -154,28 +155,45 @@ pub fn analyze(text: &str) -> Analysis {
     for (event, span) in Parser::new(text).into_offset_iter() {
         match event {
             Event::Start(Container::Heading { id, .. }, _) => {
+                let id = id.into_owned();
+                let explicit_id_range = pending_section_anchor_ranges
+                    .iter()
+                    .rposition(|(pending_id, _)| pending_id == &id)
+                    .map(|index| pending_section_anchor_ranges.remove(index).1);
                 open_headings.push(HeadingAnchorFrame {
-                    id: id.into_owned(),
+                    id,
                     start: span.start,
+                    explicit_id_range,
                     text_range: None,
                 });
             }
             Event::Start(container, attrs) => {
                 if let Some(id) = attrs.get_value("id") {
-                    let id = id.to_string();
-                    let rename_range =
-                        anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
-                    insert_anchor(
-                        &mut anchors,
-                        &mut seen_anchor_ranges,
-                        &mut diagnostics,
-                        id,
-                        Anchor {
-                            range: span.clone(),
-                            rename_range,
-                            explicit: true,
-                        },
-                    );
+                    if matches!(container, Container::Section { .. }) {
+                        let id = id.to_string();
+                        let rename_range =
+                            anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
+                        pending_section_anchor_ranges.push((id, rename_range));
+                    }
+                    if !matches!(
+                        container,
+                        Container::Heading { .. } | Container::Section { .. }
+                    ) {
+                        let id = id.to_string();
+                        let rename_range =
+                            anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
+                        insert_anchor(
+                            &mut anchors,
+                            &mut seen_anchor_ranges,
+                            &mut diagnostics,
+                            id,
+                            Anchor {
+                                range: span.clone(),
+                                rename_range,
+                                explicit: true,
+                            },
+                        );
+                    }
                 }
 
                 match &container {
@@ -290,7 +308,9 @@ pub fn analyze(text: &str) -> Analysis {
             Event::End(Container::Heading { .. }) => {
                 if let Some(heading) = open_headings.pop() {
                     let range = heading.start..span.end;
-                    let explicit_range = anchor_id_range(text, &range, &heading.id);
+                    let explicit_range = heading
+                        .explicit_id_range
+                        .or_else(|| anchor_id_range(text, &range, &heading.id));
                     let explicit = explicit_range.is_some();
                     let rename_range = explicit_range
                         .or(heading.text_range)
@@ -769,6 +789,7 @@ struct SectionFrame {
 struct HeadingAnchorFrame {
     id: String,
     start: usize,
+    explicit_id_range: Option<Range<usize>>,
     text_range: Option<Range<usize>>,
 }
 
