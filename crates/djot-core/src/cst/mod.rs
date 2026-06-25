@@ -10,6 +10,19 @@
 
 use std::ops::Range;
 
+use jotdown::{Container, Event, Parser};
+
+/// The id djot derives for a heading with the given `title` text, following
+/// jotdown's slugging rules. A syntactic operation (no project semantics), kept
+/// here so the rest of the crate need not parse djot itself.
+pub fn heading_id(title: &str) -> Option<String> {
+    let source = format!("# {}\n", title.trim());
+    Parser::new(&source).find_map(|event| match event {
+        Event::Start(Container::Heading { id, .. }, _) => Some(id.into_owned()),
+        _ => None,
+    })
+}
+
 /// Syntactic anchors of a fenced div's opening fence that edits use to place a
 /// new attribute block.
 ///

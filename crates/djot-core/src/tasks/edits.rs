@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, FixedOffset, SecondsFormat};
-use jotdown::{Container, Event, Parser};
 
 use crate::cst::{leading_indent, line_bounds, next_line_start, previous_line_start};
 use crate::{analyze, Anchor, TextEdit};
@@ -436,19 +435,12 @@ fn task_instance_id(
     anchors: &HashMap<String, Anchor>,
     reserved: &HashSet<String>,
 ) -> Option<String> {
-    let base = djot_heading_id(title)?;
+    let base = crate::cst::heading_id(title)?;
     let date = due.format("%Y-%m-%d");
     let candidate = format!("{base}-{date}");
     Some(unique_anchor_id(candidate, anchors, reserved))
 }
 
-fn djot_heading_id(title: &str) -> Option<String> {
-    let source = format!("# {}\n", title.trim());
-    Parser::new(&source).find_map(|event| match event {
-        Event::Start(Container::Heading { id, .. }, _) => Some(id.into_owned()),
-        _ => None,
-    })
-}
 
 fn unique_anchor_id(
     candidate: String,
