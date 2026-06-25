@@ -182,6 +182,69 @@ fn rename_link_path_renames_file_and_updates_workspace_links() {
 }
 
 #[test]
+fn rename_file_only_link_path_renames_file_and_updates_workspace_links() {
+    let dir = temp_dir("djot-ls-rename-file-only-link-path-test");
+    let a = dir.join("a.dj");
+    let b = dir.join("b.dj");
+    let renamed = dir.join("renamed.dj");
+    let doc_a = "# A\n\nsee [topic](b.dj)\n";
+    std::fs::write(&a, doc_a).unwrap();
+    std::fs::write(&b, "# B\n").unwrap();
+
+    let root_uri = dir_uri(&dir);
+    let a_uri = file_uri(&a);
+    let b_uri = file_uri(&b);
+    let renamed_uri = file_uri(&renamed);
+    let path_col = doc_a.lines().nth(2).unwrap().find("b.dj").unwrap() as i64;
+    let position = json!({"line":2,"character":path_col});
+    let text_document = json!({"uri":a_uri});
+
+    let msgs = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "capabilities":{"workspace":{"workspaceEdit":{"documentChanges":true,"resourceOperations":["rename"]}}},
+            "processId":null,
+            "rootUri":root_uri
+        }}),
+        json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareRename",
+        "params":{"textDocument":text_document.clone(),"position":position.clone()}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"textDocument/rename",
+        "params":{"textDocument":text_document,"position":position,"newName":"renamed.dj"}}),
+        json!({"jsonrpc":"2.0","id":99,"method":"shutdown","params":null}),
+        json!({"jsonrpc":"2.0","method":"exit","params":null}),
+    ];
+
+    let responses = run_session(&msgs);
+    let prepare = response_result(&responses, 2);
+    assert_eq!(prepare["placeholder"], json!("b.dj"));
+    assert_eq!(
+        prepare["range"]["start"],
+        json!({"line":2,"character":path_col})
+    );
+    assert_eq!(
+        prepare["range"]["end"],
+        json!({"line":2,"character":path_col + "b.dj".len() as i64})
+    );
+
+    let result = response_result(&responses, 3);
+    let changes = result["documentChanges"]
+        .as_array()
+        .expect("documentChanges is not an array");
+    assert_eq!(changes[0]["kind"], json!("rename"));
+    assert_eq!(changes[0]["oldUri"], json!(b_uri));
+    assert_eq!(changes[0]["newUri"], json!(renamed_uri));
+    assert_eq!(
+        sorted_document_change_edits(result),
+        vec![(
+            "a.dj".to_string(),
+            2,
+            path_col as u64,
+            "renamed.dj".to_string()
+        )]
+    );
+}
+
+#[test]
 fn rename_link_path_handles_spaces_and_nested_relative_links() {
     let dir = temp_dir("djot-ls-rename-link-path-spaces-test");
     std::fs::create_dir_all(dir.join("nested")).unwrap();
