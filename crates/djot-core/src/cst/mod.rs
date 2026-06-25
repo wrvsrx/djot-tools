@@ -10,7 +10,7 @@
 
 use std::ops::Range;
 
-use jotdown::{Container, Event, Parser};
+use jotdown::Parser;
 
 /// The id djot derives for a heading with the given `title` text, following
 /// jotdown's slugging rules. A syntactic operation (no project semantics), kept
@@ -18,9 +18,121 @@ use jotdown::{Container, Event, Parser};
 pub fn heading_id(title: &str) -> Option<String> {
     let source = format!("# {}\n", title.trim());
     Parser::new(&source).find_map(|event| match event {
-        Event::Start(Container::Heading { id, .. }, _) => Some(id.into_owned()),
+        jotdown::Event::Start(jotdown::Container::Heading { id, .. }, _) => Some(id.into_owned()),
         _ => None,
     })
+}
+
+// ---- Event stream ----------------------------------------------------------
+
+/// Attributes attached to a container, owned and decoupled from jotdown so that
+/// semantic layers never name the parser type.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Attributes {
+    pairs: Vec<(String, String)>,
+}
+
+impl Attributes {
+    /// The value of `key`, following jotdown's resolution (last value wins;
+    /// `class` is the concatenation of all class tokens).
+    pub fn get_value(&self, key: &str) -> Option<&str> {
+        self.pairs
+            .iter()
+            .find(|(existing, _)| existing == key)
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// Whether the container carries the given class token.
+    pub fn has_class(&self, class: &str) -> bool {
+        self.get_value("class")
+            .is_some_and(|value| value.split_whitespace().any(|token| token == class))
+    }
+
+    fn from_jotdown(attrs: &jotdown::Attributes) -> Self {
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        for (key, _) in attrs.unique_pairs() {
+            if pairs.iter().any(|(existing, _)| existing == key) {
+                continue;
+            }
+            if let Some(value) = attrs.get_value(key) {
+                pairs.push((key.to_string(), value.to_string()));
+            }
+        }
+        Self { pairs }
+    }
+}
+
+/// A block or inline container. Mirrors the jotdown variants the analysis
+/// distinguishes; everything else collapses to [`Container::Other`], which still
+/// pairs Start/End so nesting is preserved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Container {
+    Section,
+    Heading { level: u16, id: String },
+    Div { class: String },
+    ListItem,
+    TaskListItem { checked: bool },
+    Link { dst: String },
+    Paragraph,
+    CodeBlock,
+    Other,
+}
+
+/// A parse event carrying the owned data and (via [`parse`]) source span the
+/// analysis needs. Inline text and events not relevant to analysis flatten into
+/// [`Event::Other`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    Start(Container, Attributes),
+    End(Container),
+    Str(String),
+    Softbreak,
+    Hardbreak,
+    Other,
+}
+
+/// Parse `text` into the cst event stream, each event paired with its source
+/// byte span. This is the single place jotdown drives the walk; semantic layers
+/// consume these events instead of the parser.
+pub fn parse(text: &str) -> impl Iterator<Item = (Event, Range<usize>)> + '_ {
+    Parser::new(text)
+        .into_offset_iter()
+        .map(|(event, span)| (convert_event(event), span))
+}
+
+fn convert_event(event: jotdown::Event) -> Event {
+    match event {
+        jotdown::Event::Start(container, attrs) => Event::Start(
+            convert_container(container),
+            Attributes::from_jotdown(&attrs),
+        ),
+        jotdown::Event::End(container) => Event::End(convert_container(container)),
+        jotdown::Event::Str(text) => Event::Str(text.into_owned()),
+        jotdown::Event::Softbreak => Event::Softbreak,
+        jotdown::Event::Hardbreak => Event::Hardbreak,
+        _ => Event::Other,
+    }
+}
+
+fn convert_container(container: jotdown::Container) -> Container {
+    match container {
+        jotdown::Container::Section { .. } => Container::Section,
+        jotdown::Container::Heading { level, id, .. } => Container::Heading {
+            level,
+            id: id.into_owned(),
+        },
+        jotdown::Container::Div { class } => Container::Div {
+            class: class.into_owned(),
+        },
+        jotdown::Container::ListItem => Container::ListItem,
+        jotdown::Container::TaskListItem { checked } => Container::TaskListItem { checked },
+        jotdown::Container::Link(dst, _) => Container::Link {
+            dst: dst.into_owned(),
+        },
+        jotdown::Container::Paragraph => Container::Paragraph,
+        jotdown::Container::CodeBlock { .. } => Container::CodeBlock,
+        _ => Container::Other,
+    }
 }
 
 /// Syntactic anchors of a fenced div's opening fence that edits use to place a
@@ -480,6 +592,23 @@ mod tests {
         let fence = div_fence(text, &(0..text.len())).unwrap();
         assert_eq!(&text[fence.fence_range.clone()], ":::: task");
         assert_eq!(fence.attribute_insert, 0..0);
+    }
+
+    #[test]
+    fn parse_exposes_div_class_and_attributes() {
+        let text = "{#anchor key=\"v\"}\n:::: task\nbody\n::::\n";
+        let events: Vec<_> = parse(text).map(|(event, _)| event).collect();
+        let attrs = events
+            .iter()
+            .find_map(|event| match event {
+                Event::Start(Container::Div { class }, attrs) if class == "task" => Some(attrs),
+                _ => None,
+            })
+            .expect("task div start");
+        assert_eq!(attrs.get_value("id"), Some("anchor"));
+        assert_eq!(attrs.get_value("key"), Some("v"));
+        // The fence class is `Container::Div.class`, not an attribute class.
+        assert!(!attrs.has_class("task"));
     }
 
     #[test]

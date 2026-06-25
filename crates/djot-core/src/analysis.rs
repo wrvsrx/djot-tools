@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 
-use jotdown::{Attributes, Container, Event, Parser};
 use serde::{Deserialize, Serialize};
+
+use crate::cst::{Attributes, Container, Event};
 
 use crate::diagnostics::{AnalysisDiagnostic, DiagnosticKind};
 use crate::edits::TextEdit;
@@ -82,9 +83,9 @@ pub fn heading_outline(text: &str) -> Vec<Heading> {
     let mut roots: Vec<Heading> = Vec::new();
     let mut stack: Vec<SectionFrame> = Vec::new();
 
-    for (event, span) in Parser::new(text).into_offset_iter() {
+    for (event, span) in crate::cst::parse(text) {
         match event {
-            Event::Start(Container::Section { .. }, _) => {
+            Event::Start(Container::Section, _) => {
                 stack.push(SectionFrame::new(span.start));
             }
             Event::Start(Container::Heading { level, .. }, _) => {
@@ -114,7 +115,7 @@ pub fn heading_outline(text: &str) -> Vec<Heading> {
                     }
                 }
             }
-            Event::End(Container::Section { .. }) => {
+            Event::End(Container::Section) => {
                 if let Some(frame) = stack.pop() {
                     let heading = frame.into_heading(span.end);
                     match stack.last_mut() {
@@ -152,10 +153,9 @@ pub fn analyze(text: &str) -> Analysis {
     let mut native_task_stack: Vec<NativeTaskFrame> = Vec::new();
     let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
 
-    for (event, span) in Parser::new(text).into_offset_iter() {
+    for (event, span) in crate::cst::parse(text) {
         match event {
             Event::Start(Container::Heading { id, .. }, _) => {
-                let id = id.into_owned();
                 let explicit_id_range = pending_section_anchor_ranges
                     .iter()
                     .rposition(|(pending_id, _)| pending_id == &id)
@@ -169,16 +169,13 @@ pub fn analyze(text: &str) -> Analysis {
             }
             Event::Start(container, attrs) => {
                 if let Some(id) = attrs.get_value("id") {
-                    if matches!(container, Container::Section { .. }) {
+                    if matches!(container, Container::Section) {
                         let id = id.to_string();
                         let rename_range =
                             anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
                         pending_section_anchor_ranges.push((id, rename_range));
                     }
-                    if !matches!(
-                        container,
-                        Container::Heading { .. } | Container::Section { .. }
-                    ) {
+                    if !matches!(container, Container::Heading { .. } | Container::Section) {
                         let id = id.to_string();
                         let rename_range =
                             anchor_id_range(text, &span, &id).unwrap_or_else(|| span.clone());
@@ -197,10 +194,10 @@ pub fn analyze(text: &str) -> Analysis {
                 }
 
                 match &container {
-                    Container::CodeBlock { .. }
+                    Container::CodeBlock
                         if metadata.is_none()
                             && metadata_capture.is_none()
-                            && has_class(&attrs, METADATA_CLASS) =>
+                            && attrs.has_class(METADATA_CLASS) =>
                     {
                         metadata_capture = Some(String::new());
                     }
@@ -217,7 +214,7 @@ pub fn analyze(text: &str) -> Analysis {
                             });
                         }
                     }
-                    Container::Div { class } if class == TASK_CLASS => {
+                    Container::Div { class } if class.as_str() == TASK_CLASS => {
                         if let Some(reference) = task_prev_reference(text, &span, &attrs) {
                             references.push(reference);
                         }
@@ -246,8 +243,8 @@ pub fn analyze(text: &str) -> Analysis {
                             title: String::new(),
                         });
                     }
-                    Container::Link(dst, _) => {
-                        open_links.push((dst.to_string(), span.start));
+                    Container::Link { dst } => {
+                        open_links.push((dst.clone(), span.start));
                     }
                     Container::Paragraph => {
                         if let Some(frame) = task_stack.last_mut() {
@@ -328,7 +325,7 @@ pub fn analyze(text: &str) -> Analysis {
                     );
                 }
             }
-            Event::End(Container::Link(_, _)) => {
+            Event::End(Container::Link { .. }) => {
                 if let Some((dst, start)) = open_links.pop() {
                     let source = start..span.end;
                     let target = parse_dst(&dst);
@@ -357,20 +354,21 @@ pub fn analyze(text: &str) -> Analysis {
                     }
                 }
             }
-            Event::End(Container::Div { class }) if class == TASK_CLASS => {
+            Event::End(Container::Div { class }) if class.as_str() == TASK_CLASS => {
                 if let Some(frame) = task_stack.pop() {
                     tasks.push(frame.into_task(text, span.end));
                 }
             }
-            Event::End(Container::ListItem | Container::TaskListItem { .. }) => {
-                if let Event::End(Container::TaskListItem { .. }) = event {
-                    if let Some(frame) = native_task_stack.pop() {
-                        native_task_list_items.push(frame.into_item(span.end));
-                    }
+            Event::End(Container::ListItem) => {
+                list_item_metadata.pop();
+            }
+            Event::End(Container::TaskListItem { .. }) => {
+                if let Some(frame) = native_task_stack.pop() {
+                    native_task_list_items.push(frame.into_item(span.end));
                 }
                 list_item_metadata.pop();
             }
-            Event::End(Container::CodeBlock { .. }) => {
+            Event::End(Container::CodeBlock) => {
                 if let Some(content) = metadata_capture.take() {
                     metadata = Some(content);
                 }
@@ -393,13 +391,6 @@ pub fn analyze(text: &str) -> Analysis {
         native_task_list_items,
         diagnostics,
     }
-}
-
-/// Whether a djot element's attributes include the given class.
-pub fn has_class(attrs: &Attributes, class: &str) -> bool {
-    attrs
-        .get_value("class")
-        .is_some_and(|v| v.to_string().split_whitespace().any(|c| c == class))
 }
 
 /// Return the raw text of the document's first `{.metadata}`-classed code block,

@@ -441,7 +441,6 @@ fn task_instance_id(
     Some(unique_anchor_id(candidate, anchors, reserved))
 }
 
-
 fn unique_anchor_id(
     candidate: String,
     anchors: &HashMap<String, Anchor>,

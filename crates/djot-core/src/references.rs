@@ -1,11 +1,10 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use jotdown::Attributes;
 use serde::{Deserialize, Serialize};
 
 use crate::analysis::attribute_value_range;
-use crate::cst::link_syntax;
+use crate::cst::{link_syntax, Attributes};
 use crate::paths::{is_djot_path, normalize, percent_decode_path};
 use crate::tasks::TaskDependency;
 
