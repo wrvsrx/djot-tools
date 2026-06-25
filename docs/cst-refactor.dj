@@ -117,7 +117,7 @@ stay where they are --- they are domain or presentation logic, not djot syntax.
 One commit per slice; each slice compiles, tests, and stands alone. Pause for
 review after Slice 1.
 
-- [ ] **Slice 1 --- CST foundation + fence bug.**
+- [x] **Slice 1 --- CST foundation + fence bug.**
 
   - Create `crates/djot-core/src/cst/mod.rs` with `DivFence`, the line
     primitives (moved from `tasks/attributes.rs`), and `cst::div_fence`.
@@ -137,11 +137,13 @@ review after Slice 1.
   task from inside a done descendant) is correct once the fence is located right;
   this slice does not change action availability.
 
-- [ ] **Slice 2 --- attribute CST.** Add `cst::attribute_spans` /
-  `AttributeSpans`. Route anchor-id range (`anchor_id_range`), metadata, and task
-  attribute range recovery through it; fold `tasks/attributes.rs` token filtering
-  onto the same parse. Delete the duplicated `attribute_id_range` /
-  `attribute_value_range` / `attribute_tokens`.
+- [x] **Slice 2 --- attribute CST.** Added `cst::attribute_block` /
+  `attribute_blocks` and `SpannedAttribute` (id/class/pair/comment with key and
+  value spans), with quote/escape/comment-aware brace matching. Routed
+  `anchor_id_range`, `attribute_value_range`, and the recurring-template token
+  filter through it; deleted `attribute_id_range` / the bespoke
+  `attribute_value_range` scanner / `attribute_tokens`. The instance-key
+  classification stayed in the task layer (it is project semantics, not syntax).
 
 - [ ] **Slice 3 --- link / reference CST.** Add `cst::link_syntax`.
   `reference_target_id_range` / `reference_target_path_range` read the CST
