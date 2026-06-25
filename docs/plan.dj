@@ -165,6 +165,16 @@ Current `djot-filter` usage and query context are documented in
     source tokens.
   - Revisit a jotdown fork or replacement only if the source-map layer keeps
     depending on parser internals that jotdown cannot expose cleanly.
+  - [ ] First slice: fix task fence/attribute mislocation as the seed of this
+    layer. `task_opening_fence` recovers the opening fence by re-scanning text
+    and string-matching the literal `::: task`, so a nested `:::: task` (4+
+    colons) is skipped and the edit lands on the wrong fence: completing an
+    unfinished outer task whose cursor sits inside an already-done nested task
+    writes a redundant `done` onto the nested task and never marks the outer
+    one. Store the fence span and attribute insertion point on `Task` from the
+    `Container::Div` start span in `analysis.rs`, drop `task_opening_fence` and
+    its colon/`- ` special cases, and cover the nested-fence regression with a
+    `djot-core` task-editing test.
 
 - [ ] Defer disk-backed analysis caching until parsing shows up as a real
   bottleneck. If added, keep the cache limited to saved on-disk files and let
