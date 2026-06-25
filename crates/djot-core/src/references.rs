@@ -92,8 +92,13 @@ pub fn resolve_target(from: &Path, target: &RefTarget) -> Option<ResolvedTarget>
 fn reference_id_range(text: &str, range: &Range<usize>, id: &str) -> Option<Range<usize>> {
     let source = text.get(range.clone())?;
     let needle = format!("#{id}");
-    let start = source.find(&needle)? + 1;
+    let search_start = reference_target_search_start(source);
+    let start = source.get(search_start..)?.find(&needle)? + search_start + 1;
     Some(range.start + start..range.start + start + id.len())
+}
+
+fn reference_target_search_start(source: &str) -> usize {
+    source.rfind("](").map_or(0, |start| start + 2)
 }
 
 pub(crate) fn reference_target_id_range(
@@ -122,7 +127,8 @@ pub(crate) fn reference_target_path_range(
         return None;
     }
     let source_text = text.get(source.clone())?;
-    let start = source_text.find(path)?;
+    let search_start = reference_target_search_start(source_text);
+    let start = source_text.get(search_start..)?.find(path)? + search_start;
     Some(source.start + start..source.start + start + path.len())
 }
 

@@ -148,6 +148,21 @@ fn index_tracks_reference_target_path_ranges() {
 }
 
 #[test]
+fn index_tracks_file_only_target_path_when_label_matches_path() {
+    let text = "[2027 CVMJ.dj](2027 CVMJ.dj)";
+    let index = build_index(text);
+
+    let reference = index.references.first().expect("link reference");
+    let range = reference
+        .target_path_range
+        .clone()
+        .expect("target path range");
+
+    assert_eq!(&text[range.clone()], "2027 CVMJ.dj");
+    assert_eq!(range.start, text.find("](").unwrap() + 2);
+}
+
+#[test]
 fn index_tracks_task_prev_references() {
     let text = "{prev=\"#old-task\"}\n::: task\nNext task.\n:::\n\n{prev=\"other%20file.dj#previous\"}\n::: task\nCross-file next task.\n:::\n\n{prev=\"other.dj\"}\n::: task\nFile-only prev is not a reference.\n:::\n";
     let index = build_index(text);
