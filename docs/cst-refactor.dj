@@ -145,11 +145,12 @@ review after Slice 1.
   `attribute_value_range` scanner / `attribute_tokens`. The instance-key
   classification stayed in the task layer (it is project semantics, not syntax).
 
-- [ ] **Slice 3 --- link / reference CST.** Add `cst::link_syntax`.
-  `reference_target_id_range` / `reference_target_path_range` read the CST
-  `dst_range`; `parse_dst` / `parse_task_reference_target` split that known span.
-  Remove `reference_id_range` / `reference_target_search_start` whole-source
-  `find()`s.
+- [x] **Slice 3 --- link / reference CST.** Added `cst::link_syntax` (inline
+  link destination span, angle brackets stripped; None for reference/autolink
+  forms). `reference_target_id_range` / `reference_target_path_range` read the
+  CST `dst_range` and split it on `#`; the link and task-reference splitters are
+  unified into shared `target_path_range` / `target_id_range`. Removed
+  `reference_id_range` / `reference_target_search_start` whole-source `find()`s.
 
 - [ ] **Slice 4 (optional, later) --- invert control + extraction seam.** Have
   `analyze()` iterate Layer A's enriched node stream rather than calling
