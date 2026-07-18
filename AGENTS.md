@@ -115,11 +115,12 @@ When asked to release a version, use this sequence:
 - commit the release version with a message like `chore: release 0.2.0`;
 - create a git tag with the exact release version, such as `git tag 0.2.0`,
   pointing at the release commit;
-- bump `[workspace.package].version` in `Cargo.toml` to the next development
-  version, such as `0.3.0-dev`;
+- after releasing `0.x.y`, bump `[workspace.package].version` in `Cargo.toml`
+  to `0.x.<y+1>-dev`, regardless of whether the next release eventually becomes
+  a patch or minor release; for example, bump `0.2.0` to `0.2.1-dev`;
 - run `cargo check --workspace` again so Cargo updates `Cargo.lock`;
 - commit the development-version bump with a message like
-  `chore: bump version to 0.3.0-dev`.
+  `chore: bump version to 0.2.1-dev`.
 
 ## Generated README
 
