@@ -75,6 +75,9 @@ pub enum Container {
     Link { dst: String },
     Paragraph,
     CodeBlock,
+    DescriptionList,
+    DescriptionTerm,
+    DescriptionDetails,
     Other,
 }
 
@@ -86,6 +89,7 @@ pub enum Event {
     Start(Container, Attributes),
     End(Container),
     Str(String),
+    Symbol(String),
     Softbreak,
     Hardbreak,
     Other,
@@ -108,6 +112,7 @@ fn convert_event(event: jotdown::Event) -> Event {
         ),
         jotdown::Event::End(container) => Event::End(convert_container(container)),
         jotdown::Event::Str(text) => Event::Str(text.into_owned()),
+        jotdown::Event::Symbol(text) => Event::Symbol(text.into_owned()),
         jotdown::Event::Softbreak => Event::Softbreak,
         jotdown::Event::Hardbreak => Event::Hardbreak,
         _ => Event::Other,
@@ -131,6 +136,9 @@ fn convert_container(container: jotdown::Container) -> Container {
         },
         jotdown::Container::Paragraph => Container::Paragraph,
         jotdown::Container::CodeBlock { .. } => Container::CodeBlock,
+        jotdown::Container::DescriptionList => Container::DescriptionList,
+        jotdown::Container::DescriptionTerm => Container::DescriptionTerm,
+        jotdown::Container::DescriptionDetails => Container::DescriptionDetails,
         _ => Container::Other,
     }
 }

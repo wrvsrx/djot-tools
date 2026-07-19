@@ -12,4 +12,3 @@ comfy-table.workspace = true
 djot-core = { path = "../djot-core" }
 shlex.workspace = true
 skim.workspace = true
-toml.workspace = true

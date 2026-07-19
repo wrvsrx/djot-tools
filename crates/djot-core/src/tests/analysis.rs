@@ -45,10 +45,10 @@ fn index_collects_anchors_and_references() {
 
 #[test]
 fn analysis_collects_shared_document_semantics() {
-    let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# Topic\n\n{#task-a recur=\"P1Q\"}\n::: task\nTask A.\n:::\n\n- [x] Native task.\n\n[topic](#Topic)\n";
+    let text = "{.metadata}\n: title\n\n  x\n\n# Topic\n\n{#task-a recur=\"P1Q\"}\n::: task\nTask A.\n:::\n\n- [x] Native task.\n\n[topic](#Topic)\n";
     let analysis = analyze(text);
 
-    assert_eq!(analysis.metadata.as_deref(), Some("title = \"x\"\n"));
+    assert_eq!(analysis.metadata.unwrap().get("title").unwrap().value, "x");
     assert!(analysis.index.anchors.contains_key("Topic"));
     assert_eq!(analysis.index.references.len(), 1);
     assert_eq!(analysis.tasks.len(), 1);
@@ -213,15 +213,20 @@ fn index_tracks_task_prev_references() {
 }
 
 #[test]
-fn metadata_block_extracts_leading_toml() {
-    let text = "{.metadata}\n``` toml\ntitle = \"x\"\n```\n\n# H\n";
-    assert_eq!(metadata_block(text).as_deref(), Some("title = \"x\"\n"));
-    // A plain code block is not metadata.
-    assert_eq!(metadata_block("``` toml\ntitle = \"x\"\n```\n"), None);
+fn metadata_extracts_definition_list_fields() {
+    let text =
+        "{.metadata}\n: title\n\n  Usage _Guide_\n\n: created\n\n  `2026-06-22T09:00:00+08:00`\n";
+    let metadata = document_metadata(text).unwrap();
+    assert_eq!(metadata.get("title").unwrap().value, "Usage Guide");
+    assert_eq!(
+        metadata.get("created").unwrap().value,
+        "2026-06-22T09:00:00+08:00"
+    );
+    assert!(document_metadata(": title\n\n  x\n").is_none());
 }
 
 #[test]
-fn metadata_insertion_edit_adds_leading_metadata_block() {
+fn metadata_insertion_edit_adds_leading_metadata_definition_list() {
     let text = "\n\n# Heading\n";
     let edit = metadata_insertion_edit(
         text,
@@ -234,7 +239,7 @@ fn metadata_insertion_edit_adds_leading_metadata_block() {
     assert_eq!(edit.range, 0..0);
     assert_eq!(
         edit.new_text,
-        "{.metadata}\n``` toml\ntitle = \"my \\\"note\\\"\"\ncreated = \"2026-06-22T09:00:00+08:00\"\n```\n\n"
+        "{.metadata}\n: title\n\n  my \"note\"\n\n: created\n\n  `2026-06-22T09:00:00+08:00`\n\n"
     );
     assert!(metadata_insertion_edit("# Heading\n", 2, Path::new("x.dj"), "now").is_none());
 }

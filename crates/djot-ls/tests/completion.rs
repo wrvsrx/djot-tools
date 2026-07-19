@@ -13,11 +13,7 @@ fn completion_after_open_bracket_inserts_title_link() {
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[Us";
     std::fs::write(&a, doc_a).unwrap();
-    std::fs::write(
-        &usage,
-        "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\n```\n\n# Usage\n",
-    )
-    .unwrap();
+    std::fs::write(&usage, "{.metadata}\n: title\n\n  Usage Guide\n\n# Usage\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let a_uri = file_uri(&a);
@@ -55,11 +51,7 @@ fn completion_replaces_closing_bracket_after_label_cursor() {
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[Us]";
     std::fs::write(&a, doc_a).unwrap();
-    std::fs::write(
-        &usage,
-        "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\n```\n\n# Usage\n",
-    )
-    .unwrap();
+    std::fs::write(&usage, "{.metadata}\n: title\n\n  Usage Guide\n\n# Usage\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let a_uri = file_uri(&a);
@@ -96,11 +88,7 @@ fn completion_inside_link_destination_inserts_path() {
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read](us";
     std::fs::write(&a, doc_a).unwrap();
-    std::fs::write(
-        &usage,
-        "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\n```\n\n# Usage\n",
-    )
-    .unwrap();
+    std::fs::write(&usage, "{.metadata}\n: title\n\n  Usage Guide\n\n# Usage\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let a_uri = file_uri(&a);
@@ -137,11 +125,7 @@ fn completion_from_subdirectory_inserts_relative_path() {
     let target = dir.join("a").join("a.dj");
     let doc_source = "# B\n\n[Target";
     std::fs::write(&source, doc_source).unwrap();
-    std::fs::write(
-        &target,
-        "{.metadata}\n``` toml\ntitle = \"Target A\"\n```\n\n# A\n",
-    )
-    .unwrap();
+    std::fs::write(&target, "{.metadata}\n: title\n\n  Target A\n\n# A\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let source_uri = file_uri(&source);
@@ -168,11 +152,7 @@ fn completion_inside_closed_empty_destination_inserts_path() {
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n[read]()";
     std::fs::write(&a, doc_a).unwrap();
-    std::fs::write(
-        &usage,
-        "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\n```\n\n# Usage\n",
-    )
-    .unwrap();
+    std::fs::write(&usage, "{.metadata}\n: title\n\n  Usage Guide\n\n# Usage\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let a_uri = file_uri(&a);
@@ -343,11 +323,7 @@ fn completion_does_not_run_inside_inline_code() {
     let usage = dir.join("usage.dj");
     let doc_a = "# A\n\n`[Us`";
     std::fs::write(&a, doc_a).unwrap();
-    std::fs::write(
-        &usage,
-        "{.metadata}\n``` toml\ntitle = \"Usage Guide\"\n```\n\n# Usage\n",
-    )
-    .unwrap();
+    std::fs::write(&usage, "{.metadata}\n: title\n\n  Usage Guide\n\n# Usage\n").unwrap();
 
     let root_uri = dir_uri(&dir);
     let a_uri = file_uri(&a);

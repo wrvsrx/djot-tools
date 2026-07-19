@@ -61,11 +61,33 @@ pub struct DocIndex {
     pub references: Vec<Reference>,
 }
 
+/// A document metadata field from a `.metadata` definition list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataField {
+    pub name: String,
+    pub name_range: Range<usize>,
+    pub value: String,
+    pub value_range: Range<usize>,
+}
+
+/// Document metadata represented by a `.metadata`-classed definition list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Metadata {
+    pub range: Range<usize>,
+    pub fields: Vec<MetadataField>,
+}
+
+impl Metadata {
+    pub fn get(&self, name: &str) -> Option<&MetadataField> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+}
+
 /// Shared per-document analysis used by workspace-level tools.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Analysis {
     pub index: DocIndex,
-    pub metadata: Option<String>,
+    pub metadata: Option<Metadata>,
     pub tasks: Vec<Task>,
     pub native_task_list_items: Vec<NativeTaskListItem>,
     /// Document-local diagnostics. Workspace-dependent diagnostics, such as
@@ -145,7 +167,7 @@ pub fn analyze(text: &str) -> Analysis {
     let mut native_task_list_items = Vec::new();
     let mut diagnostics = Vec::new();
     let mut metadata = None;
-    let mut metadata_capture: Option<String> = None;
+    let mut metadata_capture: Option<MetadataFrame> = None;
     let mut pending_section_anchor_ranges: Vec<(String, Range<usize>)> = Vec::new();
     let mut open_headings: Vec<HeadingAnchorFrame> = Vec::new();
     let mut open_links: Vec<(String, usize)> = Vec::new();
@@ -154,6 +176,15 @@ pub fn analyze(text: &str) -> Analysis {
     let mut list_item_metadata: Vec<TaskMetadata> = Vec::new();
 
     for (event, span) in crate::cst::parse(text) {
+        if let Event::End(container) = &event {
+            let finished = metadata_capture
+                .as_mut()
+                .is_some_and(|frame| frame.end_container(container, &span));
+            if finished {
+                metadata = metadata_capture.take().map(|frame| frame.finish(span.end));
+            }
+        }
+
         match event {
             Event::Start(Container::Heading { id, .. }, _) => {
                 let explicit_id_range = pending_section_anchor_ranges
@@ -168,6 +199,10 @@ pub fn analyze(text: &str) -> Analysis {
                 });
             }
             Event::Start(container, attrs) => {
+                if let Some(frame) = metadata_capture.as_mut() {
+                    frame.start_container(&container, &span);
+                }
+
                 if let Some(id) = attrs.get_value("id") {
                     if matches!(container, Container::Section) {
                         let id = id.to_string();
@@ -194,12 +229,12 @@ pub fn analyze(text: &str) -> Analysis {
                 }
 
                 match &container {
-                    Container::CodeBlock
+                    Container::DescriptionList
                         if metadata.is_none()
                             && metadata_capture.is_none()
                             && attrs.has_class(METADATA_CLASS) =>
                     {
-                        metadata_capture = Some(String::new());
+                        metadata_capture = Some(MetadataFrame::new(span.start));
                     }
                     Container::ListItem | Container::TaskListItem { .. } => {
                         list_item_metadata.push(TaskMetadata::from_attributes(text, &span, &attrs));
@@ -286,8 +321,13 @@ pub fn analyze(text: &str) -> Analysis {
                         }
                     }
                 }
-                if let Some(content) = metadata_capture.as_mut() {
-                    content.push_str(&s);
+                if let Some(frame) = metadata_capture.as_mut() {
+                    frame.push_text(&s);
+                }
+            }
+            Event::Symbol(s) => {
+                if let Some(frame) = metadata_capture.as_mut() {
+                    frame.push_text(&format!(":{s}:"));
                 }
             }
             Event::Softbreak | Event::Hardbreak => {
@@ -300,6 +340,9 @@ pub fn analyze(text: &str) -> Analysis {
                     if frame.capturing_title && !frame.title.is_empty() {
                         frame.title.push(' ');
                     }
+                }
+                if let Some(frame) = metadata_capture.as_mut() {
+                    frame.push_break();
                 }
             }
             Event::End(Container::Heading { .. }) => {
@@ -368,11 +411,6 @@ pub fn analyze(text: &str) -> Analysis {
                 }
                 list_item_metadata.pop();
             }
-            Event::End(Container::CodeBlock) => {
-                if let Some(content) = metadata_capture.take() {
-                    metadata = Some(content);
-                }
-            }
             _ => {}
         }
     }
@@ -393,9 +431,8 @@ pub fn analyze(text: &str) -> Analysis {
     }
 }
 
-/// Return the raw text of the document's first `{.metadata}`-classed code block,
-/// if any. This is the shared primitive behind metadata hover and export.
-pub fn metadata_block(text: &str) -> Option<String> {
+/// Return the first `.metadata`-classed definition list wrapper, if any.
+pub fn document_metadata(text: &str) -> Option<Metadata> {
     analyze(text).metadata
 }
 
@@ -409,15 +446,15 @@ pub fn metadata_insertion_edit(
     path: &Path,
     created: &str,
 ) -> Option<TextEdit> {
-    if metadata_block(text).is_some() || !text.get(..offset)?.trim().is_empty() {
+    if document_metadata(text).is_some() || !text.get(..offset)?.trim().is_empty() {
         return None;
     }
 
     Some(TextEdit {
         range: 0..0,
         new_text: format!(
-            "{{.metadata}}\n``` toml\ntitle = \"{}\"\ncreated = \"{}\"\n```\n\n",
-            escape_toml_string(&default_metadata_title(path)),
+            "{{.metadata}}\n: title\n\n  {}\n\n: created\n\n  `{}`\n\n",
+            escape_djot_text(&default_metadata_title(path)),
             created
         ),
     })
@@ -431,22 +468,116 @@ fn default_metadata_title(path: &Path) -> String {
         .to_string()
 }
 
-fn escape_toml_string(value: &str) -> String {
+fn escape_djot_text(value: &str) -> String {
     let mut escaped = String::new();
     for c in value.chars() {
         match c {
-            '\\' => escaped.push_str("\\\\"),
-            '"' => escaped.push_str("\\\""),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            c if c.is_control() => {
-                escaped.push_str(&format!("\\u{:04X}", c as u32));
+            '\\' | '`' | '*' | '_' | '[' | ']' | '{' | '}' | ':' => {
+                escaped.push('\\');
+                escaped.push(c);
             }
+            '\n' | '\r' => escaped.push(' '),
+            '\t' => escaped.push_str("    "),
+            c if c.is_control() => {}
             c => escaped.push(c),
         }
     }
     escaped
+}
+
+struct MetadataFrame {
+    range_start: usize,
+    depth: usize,
+    in_direct_list: bool,
+    current_name: Option<(String, Range<usize>)>,
+    current_value: Option<(String, Range<usize>)>,
+    fields: Vec<MetadataField>,
+}
+
+impl MetadataFrame {
+    fn new(range_start: usize) -> Self {
+        Self {
+            range_start,
+            depth: 1,
+            in_direct_list: true,
+            current_name: None,
+            current_value: None,
+            fields: Vec::new(),
+        }
+    }
+
+    fn start_container(&mut self, container: &Container, span: &Range<usize>) {
+        self.depth += 1;
+        match container {
+            Container::DescriptionTerm if self.in_direct_list && self.depth == 2 => {
+                self.current_name = Some((String::new(), span.clone()));
+            }
+            Container::DescriptionDetails if self.in_direct_list && self.depth == 2 => {
+                self.current_value = Some((String::new(), span.clone()));
+            }
+            _ => {}
+        }
+    }
+
+    fn push_text(&mut self, text: &str) {
+        if let Some((value, _)) = self.current_value.as_mut() {
+            value.push_str(text);
+        } else if let Some((name, _)) = self.current_name.as_mut() {
+            name.push_str(text);
+        }
+    }
+
+    fn push_break(&mut self) {
+        let target = self
+            .current_value
+            .as_mut()
+            .map(|(value, _)| value)
+            .or_else(|| self.current_name.as_mut().map(|(name, _)| name));
+        if let Some(text) = target {
+            if !text.is_empty() && !text.ends_with(' ') {
+                text.push(' ');
+            }
+        }
+    }
+
+    fn end_container(&mut self, container: &Container, span: &Range<usize>) -> bool {
+        match container {
+            Container::DescriptionTerm if self.in_direct_list && self.depth == 2 => {
+                if let Some((_, range)) = self.current_name.as_mut() {
+                    range.end = span.end;
+                }
+            }
+            Container::DescriptionDetails if self.in_direct_list && self.depth == 2 => {
+                if let Some((_, range)) = self.current_value.as_mut() {
+                    range.end = span.end;
+                }
+                if let (Some((name, name_range)), Some((value, value_range))) =
+                    (self.current_name.take(), self.current_value.take())
+                {
+                    self.fields.push(MetadataField {
+                        name: name.trim().to_string(),
+                        name_range,
+                        value: value.trim().to_string(),
+                        value_range,
+                    });
+                }
+            }
+            _ => {}
+        }
+
+        if self.depth == 1 {
+            return true;
+        }
+        self.depth -= 1;
+        false
+    }
+
+    fn finish(self, range_end: usize) -> Metadata {
+        Metadata {
+            range: self.range_start..range_end,
+            fields: self.fields,
+        }
+    }
 }
 
 fn insert_anchor(

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use cel::{Context, ExecutionError, Program, Value};
 use chrono::{DateTime, FixedOffset, Local};
-use djot_core::{metadata_block, resolve_target, Workspace};
+use djot_core::{document_metadata, resolve_target, Workspace};
 
 use crate::{display_path, LoadedDocs};
 
@@ -200,12 +200,8 @@ fn sorted_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 }
 
 fn document_title(text: &str) -> Option<String> {
-    let metadata = metadata_block(text)?;
-    let value: toml::Value = toml::from_str(&metadata).ok()?;
-    value
-        .get("title")
-        .and_then(|title| title.as_str())
-        .map(str::to_string)
+    document_metadata(text)
+        .and_then(|metadata| metadata.get("title").map(|field| field.value.clone()))
 }
 
 fn datetime_value(value: Option<&str>) -> Value {

@@ -16,8 +16,8 @@ mod tasks;
 mod workspace;
 
 pub use analysis::{
-    analyze, build_index, heading_outline, metadata_block, metadata_insertion_edit, tasks,
-    Analysis, Anchor, DocIndex, Heading, NativeTaskListItem,
+    analyze, build_index, document_metadata, heading_outline, metadata_insertion_edit, tasks,
+    Analysis, Anchor, DocIndex, Heading, Metadata, MetadataField, NativeTaskListItem,
 };
 pub use cst::{closed_link_at, plain_str_at};
 pub use diagnostics::{AnalysisDiagnostic, DiagnosticKind};
@@ -37,7 +37,7 @@ pub use tasks::{
 };
 pub use workspace::{DocEntry, Workspace};
 
-/// The class that marks a leading code block as document metadata. This is a
+/// The class that marks a definition list as document metadata. This is a
 /// djot-ls / djot-export convention layered on djot's native attribute syntax,
 /// not part of djot itself - other djot tools simply see a classed code block.
 pub const METADATA_CLASS: &str = "metadata";

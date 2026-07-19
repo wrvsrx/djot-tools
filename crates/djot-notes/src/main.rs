@@ -20,11 +20,11 @@ pub(crate) use interactive::{
 pub(crate) use interactive::{handle_interactive_action, run_interactive};
 pub(crate) use query::{retain_query_matches, QueryPlan};
 pub(crate) use render::print_paths;
+pub(crate) use task_ops::{print_tasks, run_task_action};
 #[cfg(test)]
 pub(crate) use task_ops::{
     set_task_status_target, task_matches, task_output_record, TaskOutputRecord,
 };
-pub(crate) use task_ops::{print_tasks, run_task_action};
 
 fn main() -> ExitCode {
     let config = Config::parse();
@@ -362,7 +362,8 @@ mod tests {
 
     #[test]
     fn task_complete_subcommand_accepts_targets() {
-        let config = Config::parse_from(["djot-notes", "task", "complete", "tasks.dj#write-parser"]);
+        let config =
+            Config::parse_from(["djot-notes", "task", "complete", "tasks.dj#write-parser"]);
 
         let CommandMode::Task(TaskConfig {
             action: Some(TaskAction::Complete(complete)),
@@ -409,7 +410,7 @@ mod tests {
         std::fs::create_dir_all(root.join("docs")).unwrap();
         std::fs::write(
             root.join("docs/semantics.dj"),
-            "{.metadata}\n``` toml\ntitle = \"Semantics Guide\"\n```\n\n# H\n",
+            "{.metadata}\n: title\n\n  Semantics Guide\n\n# H\n",
         )
         .unwrap();
         std::fs::write(root.join("notes.dj"), "# Notes\n").unwrap();
@@ -724,11 +725,11 @@ mod tests {
     #[test]
     fn preview_highlights_djot_lines_with_ansi() {
         let preview = highlight_djot_preview(
-            "{.metadata}\n``` toml\ntitle = \"T\"\n```\n# Heading\nSee [next](next.dj)\n",
+            "{.metadata}\n: title\n\n  T\n\n# Heading\nSee [next](next.dj)\n",
         );
 
         assert!(preview.contains("\x1b[35m{.metadata}\x1b[0m"));
-        assert!(preview.contains("\x1b[36m``` toml\x1b[0m"));
+        assert!(preview.contains(": title"));
         assert!(preview.contains("\x1b[1;34m# Heading\x1b[0m"));
         assert!(preview.contains("\x1b[32m[next](next.dj)\x1b[0m"));
     }

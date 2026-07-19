@@ -37,11 +37,11 @@ fn code_action_adds_metadata_at_start() {
         json!({"start":{"line":0,"character":0},"end":{"line":0,"character":0}})
     );
     let new_text = edit["newText"].as_str().expect("newText is not a string");
-    assert!(new_text.starts_with("{.metadata}\n``` toml\ntitle = \"my-note\"\ncreated = \""));
-    assert!(new_text.ends_with("\"\n```\n\n"));
-    assert_timestamp_shape_with_closing_quote(
+    assert!(new_text.starts_with("{.metadata}\n: title\n\n  my-note\n\n: created\n\n  `"));
+    assert!(new_text.ends_with("`\n\n"));
+    assert_timestamp_shape_with_closing_backtick(
         new_text,
-        "{.metadata}\n``` toml\ntitle = \"my-note\"\ncreated = \"",
+        "{.metadata}\n: title\n\n  my-note\n\n: created\n\n  `",
     );
 }
 
@@ -69,7 +69,7 @@ fn code_action_does_not_add_metadata_after_existing_block() {
 
 #[test]
 fn code_action_does_not_add_metadata_when_metadata_exists() {
-    let doc = "{.metadata}\n``` toml\ntitle = \"Existing\"\n```\n\n# Heading\n";
+    let doc = "{.metadata}\n: title\n\n  Existing\n\n# Heading\n";
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"processId":null,"rootUri":null}}),
         json!({"jsonrpc":"2.0","method":"initialized","params":{}}),
@@ -680,10 +680,10 @@ fn code_actions(responses: &[Value], id: i64) -> &[Value] {
         .expect("result is not an array")
 }
 
-fn assert_timestamp_shape_with_closing_quote(replacement: &str, prefix: &str) {
+fn assert_timestamp_shape_with_closing_backtick(replacement: &str, prefix: &str) {
     let timestamp = replacement
         .strip_prefix(prefix)
-        .and_then(|rest| rest.split_once('"'))
+        .and_then(|rest| rest.split_once('`'))
         .map(|(timestamp, _)| timestamp)
         .expect("missing timestamp");
 

@@ -1,18 +1,14 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
-use djot_core::{analyze, heading_outline, metadata_block, Anchor, Heading, Task};
+use djot_core::{analyze, document_metadata, heading_outline, Anchor, Heading, Task};
 use lsp_types::{DocumentSymbol, SymbolKind};
 
 use crate::position::byte_range_to_lsp;
 
 pub(crate) fn document_title(text: &str) -> Option<String> {
-    let metadata = metadata_block(text)?;
-    let value: toml::Value = toml::from_str(&metadata).ok()?;
-    value
-        .get("title")
-        .and_then(|title| title.as_str())
-        .map(str::to_string)
+    document_metadata(text)
+        .and_then(|metadata| metadata.get("title").map(|field| field.value.clone()))
 }
 
 pub(crate) fn document_symbols(text: &str) -> Vec<DocumentSymbol> {
