@@ -206,7 +206,9 @@ edits: `djot-ls` maps byte edits to LSP `TextEdit`s for buffers, while
 - `analyze(text) -> Analysis` collects anchors, references, metadata, task
   records, and document-local diagnostics from one document parse.
 - `build_index(text) -> DocIndex` collects `anchors` (heading/section ids plus any `{#id}` attribute → byte range) and `references` (every link → byte span + a `RefTarget` classified by `parse_dst`: `Internal #id` / `External path#id` / `Url`). jotdown resolves inline/reference/implicit links all to one destination string, so references are uniform.
-- `metadata_block(text) -> Option<String>` returns the raw toml of a leading `{.metadata}` code block; `has_class` / `METADATA_CLASS` are the shared primitives for that convention (used by the planned metadata hover and `djot-export`).
+- `document_metadata(text) -> Option<Metadata>` returns the fields and byte
+  ranges of the first definition list marked with `{.metadata}`. Field values
+  include flattened plain text for LSP and notes consumers.
 - Task edit helpers emit byte-range text edits for status changes and recurring
   task advancement; they do not apply those edits to disk.
 - `resolve_target(from, target)` normalizes internal and relative cross-file
@@ -217,20 +219,20 @@ edits: `djot-ls` maps byte edits to LSP `TextEdit`s for buffers, while
   indexed documents. It does no file I/O itself.
 - All ranges are `std::ops::Range<usize>` byte offsets. No lsp_types here.
 
-`crates/djot-export/src/main.rs` (bin `djot-export`, depends on `djot-core` + `pandoc_types` + `serde_json` + `toml`; requires the `pandoc` executable at runtime):
+`crates/djot-export/src/main.rs` (bin `djot-export`, depends on `djot-core` + `pandoc_types` + `serde_json`; requires the `pandoc` executable at runtime):
 
 - Reads djot (file arg or stdin), invokes `pandoc -f djot -t json`, parses the
   resulting pandoc JSON with `pandoc_types`, and prints the transformed pandoc
   JSON AST.
-- This is **where conventions become export semantics**: the first
-  `{.metadata}` code block is parsed as toml and folded into pandoc `Meta`
-  instead of rendered in the body, so its information is preserved rather than
-  dropped. Pandoc owns the Djot syntax conversion.
+- This is **where conventions become export semantics**: the first definition
+  list marked with `{.metadata}` is folded into pandoc `Meta` instead of
+  rendered in the body. Verbatim values become `MetaString`, bullet lists
+  recursively become `MetaList`, and other Djot content retains its Pandoc AST.
 - Unit tests live in the same file and cover the pandoc AST metadata
   transformation. The CLI round-trip requires `pandoc`.
 - Verify with a round-trip: `printf '# H\n' | ./target/debug/djot-export | pandoc -f json -t markdown`.
 
-`crates/djot-notes/src/main.rs` (bin `djot-notes`, depends on `djot-core` + `cel` + `clap` + `shlex` + `skim` + `toml`):
+`crates/djot-notes/src/main.rs` (bin `djot-notes`, depends on `djot-core` + `cel` + `clap` + `shlex` + `skim`):
 
 - Recursively scans a root directory for `.dj` / `.djot` files, loads them into
   `djot_core::Workspace`, and prints root-relative paths that match all

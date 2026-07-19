@@ -1,6 +1,6 @@
 ---
 name: djot-semantic-notes
-description: Edit Djot note repositories that follow djot-tools semantics. Use when creating, modifying, completing, canceling, recurring, or dependency-linking tasks in .dj/.djot notes; preserving djot-tools task attributes and reference spelling; writing the metadata block or [@key]{.cite} citations for djot-export; or helping an LLM operate on notes written for djot-ls, djot-notes, or djot-export.
+description: Edit Djot note repositories that follow djot-tools semantics. Use when creating, modifying, completing, canceling, recurring, or dependency-linking tasks in .dj/.djot notes; preserving djot-tools task attributes and reference spelling; writing the metadata definition list or [@key]{.cite} citations for djot-export; or helping an LLM operate on notes written for djot-ls, djot-notes, or djot-export.
 ---
 
 # Djot Semantic Notes
@@ -23,12 +23,12 @@ it. If working inside the `djot-tools` source repository, prefer
   requested edit requires changing them.
 - For base Djot syntax questions, also use the bundled `djot-markup` skill.
 - When applying task changes, read `references/tasks.md` first.
-- When writing notes for `djot-export` (metadata block, citations), read
+- When writing notes for `djot-export` (metadata definition list, citations), read
   `references/export.md` first.
 
 ## References
 
 - `references/tasks.md`: task blocks, metadata fields, recurrence, dependencies,
   and examples.
-- `references/export.md`: `djot-export` semantics — the `{.metadata}` block and
+- `references/export.md`: `djot-export` semantics — the `{.metadata}` definition list and
   `[@key]{.cite}` citations.

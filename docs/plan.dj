@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "plan"
-```
+: title
+
+  plan
 
 This file is a roadmap, not user documentation. Current command usage lives in
 [the README](../README.dj), and implemented Djot conventions live in
@@ -84,16 +84,17 @@ drift.
 Current `djot-export` usage and behavior are documented in
 [the README](../README.dj#Export). Remaining work:
 
-- [ ] richer metadata: render `author`/`date` (e.g. a byline), nested tables
+- [ ] richer metadata: render `author`/`date` (e.g. a byline), nested maps
 - [ ] document-level math macros: let a `math_macros` metadata field (entries of
-  `[name, expansion, nargs]`) define macros that apply across the whole document
+  `[name, expansion, nargs]`, written as nested bullet lists) define macros that
+  apply across the whole document
   and survive to every output format. Plan: a pandoc filter (extend
   `pandoc-filters`' `add-macros`, currently HTML-only) that injects both an HTML
   MathJax `tex.macros` config (`RawBlock "html"`) and a LaTeX `\newcommand`
   preamble (`RawBlock "latex"`) into `header-includes`, so pandoc selects the
   right one per output format. It must append to any existing `header-includes`
-  instead of overwriting, and accept both `MetaString` (how `djot-export`'s
-  metadata fold emits the entries) and `MetaInlines` (pandoc-native YAML). Open
+  instead of overwriting, and accept both `MetaString` (verbatim values) and
+  `MetaInlines` (plain Djot or pandoc-native YAML values). Open
   question: keep this in a pandoc filter or bake it into `djot-export`'s metadata
   handling. A renderer-independent alternative is expanding the macros into the
   `Math` nodes directly, at the cost of a small TeX macro expander.
@@ -354,7 +355,7 @@ support.
 Current metadata semantics are documented in [semantics](semantics.dj#Metadata).
 Remaining work:
 
-- [x] code action to add a leading metadata block with `title` initialized from
+- [x] code action to add a leading metadata definition list with `title` initialized from
   the file name and `created` initialized to the current RFC 3339 datetime
 - [ ] metadata hover needs a display form rather than the pandoc `Meta` map
 

@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "djot-tools"
-```
+: title
+
+  djot-tools
 
 A Rust toolkit for [Djot](https://djot.net) markup. It includes a
 [Language Server](https://microsoft.github.io/language-server-protocol/), an
@@ -74,12 +74,12 @@ djot-export doc.dj | pandoc -f json -o doc.pdf
 Pandoc's native Djot reader handles the syntax conversion. `djot-export` then
 applies this project's export semantics:
 
-- a `{.metadata}` toml block is lifted out of the rendered body and folded into
-  pandoc metadata rather than printed as a code block;
-- every metadata string value is parsed as djot markup, exactly as pandoc parses
-  YAML metadata scalars, so a `title` (or any field) may contain emphasis, math,
-  or a `[@key]{.cite}` citation; booleans stay boolean and a multi-paragraph
-  value becomes block metadata;
+- a definition list marked with `{.metadata}` is lifted out of the rendered
+  body and folded into pandoc metadata;
+- definition values are Djot content, so a `title` (or any field) may contain
+  emphasis, math, or a `[@key]{.cite}` citation; a verbatim-only value becomes
+  `MetaString`, bullet lists recursively become `MetaList`, and other rich or
+  multi-block content keeps its Pandoc structure;
 - a `[X]{.cite}` span becomes a pandoc `Cite` node, where `X` is exactly a
   pandoc-markdown citation: `[@smith2004]{.cite}`, `[-@smith2004]{.cite}`,
   `[@smith2004, pp. 33-35]{.cite}`, `[see @smith2004]{.cite}`, and
@@ -194,7 +194,7 @@ advertises `documentSymbol`, `definition`, and `references` support during
 A Cargo workspace with four crates:
 
 - [`crates/djot-core`](crates/djot-core) -- protocol-agnostic djot analysis
-  (heading outline, anchor/reference index, metadata-block extraction) working
+  (heading outline, anchor/reference index, metadata-field extraction) working
   purely in byte offsets. No LSP or pandoc types, so it is shared by the other
   crates.
 - [`crates/djot-ls`](crates/djot-ls) -- the `djot-ls` LSP binary; it depends on

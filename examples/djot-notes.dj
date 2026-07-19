@@ -1,8 +1,11 @@
 {.metadata}
-``` toml
-title = "djot-notes playground"
-area = "examples"
-```
+: title
+
+  djot-notes playground
+
+: area
+
+  `examples`
 
 This file demonstrates data that `djot-notes` can query: paths, metadata
 titles, reverse references, and task blocks.

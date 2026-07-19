@@ -1,9 +1,15 @@
 {.metadata}
-``` toml
-title = "djot-export _playground_"
-author = "djot-tools"
-date = "2026-06-20"
-```
+: title
+
+  djot-export _playground_
+
+: author
+
+  djot-tools
+
+: date
+
+  `2026-06-20`
 
 # Exporter features
 

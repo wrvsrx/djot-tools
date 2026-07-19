@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "djot-tools playground"
-```
+: title
+
+  djot-tools playground
 
 Open this directory as a workspace after building `target/debug/djot-ls`.
 This small set of documents is meant for manual testing and demos.

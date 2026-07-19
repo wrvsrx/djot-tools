@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "semantics"
-```
+: title
+
+  semantics
 
 # Djot tools semantics
 
@@ -26,32 +26,56 @@ the same document while they are being edited.
 
 # Metadata
 
-A document may contain a code block carrying the `metadata` class:
+A document may mark a definition list with the `metadata` class:
 
 ```` djot
 {.metadata}
-``` toml
-title = "Usage Guide"
-author = "wrvsrx"
-created = "2026-06-16T12:34:56+08:00"
-```
+: title
+
+  Usage _Guide_
+
+: author
+
+  wrvsrx
+
+: created
+
+  `2026-06-16T12:34:56+08:00`
 ````
 
-The metadata block body is TOML. Current semantic fields are intentionally
-minimal:
+Each definition term is a metadata key and must be plain text. Its definition
+is the value and may contain ordinary Djot inline or block markup. Current
+semantic fields are intentionally minimal:
 
 - `title`: the document title used by tools that need a human-facing document
   name.
 - `created`: the document creation time as an RFC 3339 datetime string.
 
-`djot-export` folds this TOML into pandoc metadata instead of rendering the
-block as body content; Pandoc's native Djot reader handles the underlying syntax
-conversion. `djot-notes` can match string metadata fields by key; dotted keys
-traverse TOML tables.
+`djot-export` folds the list into pandoc metadata instead of rendering it in the
+body. A paragraph value becomes `MetaInlines`, a value consisting only of a
+verbatim span becomes `MetaString`, and bullet lists recursively become
+`MetaList`. Other block content remains `MetaBlocks`. This permits structured
+values such as a list of `math_macros` triples without embedding another data
+language:
 
-Current implementation note: tools use the first code block carrying the
-`metadata` class. They do not currently diagnose later metadata blocks or
-require metadata to be the first block.
+```` djot
+{.metadata}
+: math_macros
+
+  - - `norm`
+    - `\lVert #1 \rVert`
+    - 1
+````
+
+Use verbatim spans for values that must remain literal, including datetimes and
+TeX expansions. In particular, an unquoted RFC 3339 datetime can contain a
+Djot `:symbol:` sequence. `djot-notes` and `djot-ls` use the parsed plain-text
+value of `title`.
+
+Current implementation note: tools use the first definition list carrying the
+`metadata` class. They do not currently diagnose later metadata lists, invalid
+or duplicate keys, or require metadata to be the first block. `djot-export`
+keeps the first occurrence of a duplicate key.
 
 # Anchors
 

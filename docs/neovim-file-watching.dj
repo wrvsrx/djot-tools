@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "neovim file watching"
-```
+: title
+
+  neovim file watching
 
 # Neovim file watching on Linux
 

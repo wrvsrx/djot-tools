@@ -1,7 +1,7 @@
 {.metadata}
-``` toml
-title = "djot-ls playground"
-```
+: title
+
+  djot-ls playground
 
 Use this file in an editor with `djot-ls` attached. It is arranged so common
 LSP operations have something concrete to act on.
